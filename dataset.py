@@ -35,8 +35,7 @@ class CheXpertDataset(Dataset):
 
 
     def __len__(self):
-        return 4
-        # return self.csv.shape[0]
+        return self.csv.shape[0]
 
     def __getitem__(self, index):
         pth = os.path.join('data',self.csv.loc[index, 'Path'])
