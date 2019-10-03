@@ -87,6 +87,7 @@ def main(args):
     # ADD YOUR MODEL NAME HERE
     if args.model == 'resnet':
         model = models.resnet18()
+        model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         model.fc = nn.Linear(512, 14)
 
     model.float()
@@ -95,8 +96,13 @@ def main(args):
     cudnn.benchmark = True
     criterion = nn.BCEWithLogitsLoss()
 
-    train_dataset = CheXpertDataset(args,training = True)
-    test_dataset = CheXpertDataset(args,training = False)
+    xforms_train = transforms.Compose([transforms.Resize(256),
+                               transforms.RandomCrop(224)])
+    xforms_val = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
+    
+    
+    train_dataset = CheXpertDataset(args,training = True,transforms=xforms_train)
+    valid_dataset = CheXpertDataset(args,training = False,transforms=xforms_val)
 
     optimizer = torch.optim.SGD(model.parameters(), args.lr,
                                 momentum=args.momentum,
@@ -108,7 +114,7 @@ def main(args):
        num_workers=0, pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
-       test_dataset, batch_size=args.batchSize  ,shuffle = True,
+       valid_dataset, batch_size=args.batchSize  ,shuffle = True,
        num_workers=0, pin_memory=False)
 
     current_epoch = 0
@@ -120,7 +126,7 @@ def main(args):
     best = False
 
     print_options(args)
-    training_loss, training_acc, val_loss, val_acc, test_loss, test_acc, time_taken  =  ([] for i in range(7))
+    training_loss, val_loss, time_taken  =  ([] for i in range(3))
     best = False
     thres = 0
 
@@ -128,24 +134,23 @@ def main(args):
 
         optimizer = adjust_learning_rate(optimizer, epoch, args)
         # train for one epoch
-        epoch_train_loss, epoch_train_acc, TT = train(train_loader, model, criterion, optimizer, epoch, args)
-        train_loss = train_loss + loss_train
-        if args.validate:
-            # evaluate on validation set
-            loss_val = validate(val_loader, model, criterion ,args)
-            val_loss = val_loss + loss_val
+        epoch_train_loss, TT = train(train_loader, model, criterion, optimizer, epoch, args)
+        training_loss = training_loss + [epoch_train_loss]
+        # evaluate on validation set
+        loss_val = validate(val_loader, model, criterion , args)
+        val_loss = val_loss + [loss_val]
 
         state = {
             'epoch': epoch,
-            'arch': "REN",
+            'arch': args.model,
             'state_dict': model.state_dict(),
             'optimizer' : optimizer.state_dict(),
         }
 
-        if not os.path.isfile(os.path.join(expr_dir, 'model_best.pth.tar')):
+        if not os.path.isfile(os.path.join(args.expr_dir, 'model_best.pth.tar')):
             save_checkpoint(state, True, args)
 
-        if (args.validate) and (epoch > 1) :
+        if (epoch > 1) :
             best = (loss_val < min(val_loss[:len(val_loss)-1]))
             if best:
                 print("saving best performing checkpoint on val")
@@ -154,8 +159,7 @@ def main(args):
         save_checkpoint(state, False, args)
     #
 
-    save_plt([training_acc, val_acc, test_acc], ["train_acc", "val_acc" , "test_acc"], args)
-    save_plt([training_loss, val_loss, test_loss], ["train_loss", "val_loss", "test_loss"], args)
+    save_plt([training_loss, val_loss], ["train_loss", "val_loss"], args)
     save_plt([time_taken], ["time_taken"], args)
 
     
@@ -179,27 +183,21 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         # compute output
         output = model(input)
         # get the max probability of the softmax layer
-        _, predicted = torch.max(output.data,1)
-        correct += (predicted.float() == target.float()).sum().item()
-        total += target.size(0)
-        loss = criterion(output, target.long())
+        loss = criterion(output, target)
         running_loss += loss.item()
-        # measure accuracy and record loss
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 
-    TT = time.time() -stime
-    accuracy = (100*correct/total)
+    TT = time.time() - stime
     running_loss =  running_loss/(i+1)
     print('Epoch: [{0}]\t'
           'Training Loss {loss:.4f}\t'
-          'Training Acc {acc:.4f}\t'
           'Time: {time:.2f}\t'.format(
-           epoch,loss=running_loss, acc = accuracy, time= TT))
+           epoch,loss=running_loss, time= TT))
 
-    return running_loss, accuracy, TT
+    return running_loss, TT
 
 
 
@@ -220,21 +218,14 @@ def validate(val_loader, model, criterion, args):
                 target = target.cuda()
                 input = input.cuda()
             output = model(input)
-            _, predicted = torch.max(output.data,1)
-
-            correct += (predicted.float() == target.float()).sum().item()
-            total += target.size(0)
-            loss = criterion(output, target.long())
+            loss = criterion(output, target)
             running_loss += loss.item()
 
-    accuracy = (100*correct/total)
     running_loss =  running_loss/(i+1)
     print('val: \t'
-          'Loss {loss:.4f}\t'
-          'val Acc {acc:.4f}\t'.format(
-            acc = accuracy, loss=running_loss))
+          'Loss {loss:.4f}\t'.format(loss=running_loss))
 
-    return running_loss, accuracy
+    return running_loss
 
 
 def weights_init(m):
@@ -256,12 +247,20 @@ def load_checkpoint(path, model, optimizer):
 
     return model, optimizer, epoch
 
-def save_plt(array, name):
-    plt.plot(array)
-    plt.xlabel('epoch')
-    plt.ylabel('name')
-    plt.legend()
-    plt.savefig(name+'.png')
+def save_plt(array, name, args):
+    colors = ['blue','red','green','pink','purple']
+    plt.cla()
+    plt.clf()
+    plt.close()
+    for i in range(len(array)):
+        np.savetxt(os.path.join(args.expr_dir,name[i]+'.txt'), array[i], fmt='%f')
+        plt.plot(array[i],color=colors[i], label=name[i])
+        plt.xlabel('epoch')
+        plt.legend()
+    plt.savefig(os.path.join(args.expr_dir, name[i]+'.png'))
+    plt.cla()
+    plt.clf()
+    plt.close()
 
 if __name__ == '__main__':
     args = parser.parse_args()
