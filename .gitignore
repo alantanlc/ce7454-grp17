@@ -405,3 +405,4 @@ demo-cpp
 *.caffemodel
 .spyproject*
 .idea
+.DS_Store

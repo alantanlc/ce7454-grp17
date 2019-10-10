@@ -14,6 +14,7 @@ import argparse
 import datetime
 import os, sys
 import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet", help='model name')
@@ -21,7 +22,7 @@ parser.add_argument('--batchSize', type=int, default=128, help='input batch size
 parser.add_argument('--epoch', type=int, default=10, help='number of epochs - default:10')
 parser.add_argument('--lr', type=float, default=0.005, help='initial learning rate - default:0.005')
 parser.add_argument('--lr_decay', type=int, default=20, help='decay lr by 10 after _ epoches - default:20')
-parser.add_argument('--input_size', type=int, default=96, help='input size of the depth image - default:96')
+parser.add_argument('--input_size', type=int, default=224, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum - default:0.9')
 parser.add_argument('--weight_decay', type=float, default=0.0005, help='weight_decay - default:0.0005')
@@ -90,15 +91,17 @@ def main(args):
         model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
         model.fc = nn.Linear(512, 14)
 
+
     model.float()
     if args.is_cuda: model.cuda()
-    model.apply(weights_init)
+    #TODO: use xavier if not pretrained
+    #model.apply(weights_init)
     cudnn.benchmark = True
     criterion = nn.BCEWithLogitsLoss()
 
     xforms_train = transforms.Compose([transforms.Resize(256),
-                               transforms.RandomCrop(224)])
-    xforms_val = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
+                               transforms.RandomCrop(args.input_size)])
+    xforms_val = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(args.input_size)])
     
     
     train_dataset = CheXpertDataset(args,training = True,transforms=xforms_train)
@@ -111,12 +114,11 @@ def main(args):
                 
     train_loader = torch.utils.data.DataLoader(
        train_dataset, batch_size=args.batchSize, shuffle = True,
-       num_workers=0, pin_memory=False)
+       num_workers=4, pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
        valid_dataset, batch_size=args.batchSize  ,shuffle = True,
-       num_workers=0, pin_memory=False)
-
+       num_workers=4, pin_memory=False)
     current_epoch = 0
     if args.checkpoint:
         model, optimizer, current_epoch = load_checkpoint(args.checkpoint, model, optimizer)
@@ -130,7 +132,7 @@ def main(args):
     best = False
     thres = 0
 
-    for epoch in range(current_epoch, args.epoch):
+    for epoch in tqdm(range(current_epoch, args.epoch), desc='Epoch'):
 
         optimizer = adjust_learning_rate(optimizer, epoch, args)
         # train for one epoch
@@ -173,7 +175,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     # switch to train mode
     model.train()
     stime = time.time()
-    for i, (input, target) in enumerate(train_loader):
+    for i, (input, target) in enumerate(tqdm(train_loader, desc='Train iterations:')):
         # measure data loading time
         target = target.float()
         input = input.float()
@@ -210,7 +212,7 @@ def validate(val_loader, model, criterion, args):
     running_loss = 0.0
     with torch.no_grad():
 
-        for i, (input, target) in enumerate(val_loader):
+        for i, (input, target) in enumerate(tqdm(val_loader ,desc='Validate iterations:')):
 
             target = target.float()
             input = input.float()

@@ -32,6 +32,7 @@ class CheXpertDataset(Dataset):
         self.csv= self.csv.replace(-1.0,self.imputation)
         self.labels_cols = self.csv.columns[-14:]
         self.img_tensorify = ToTensor()
+        print('number of samples in dataset', self.csv.shape[0], 'Training:', self.training)
 
 
     def __len__(self):
