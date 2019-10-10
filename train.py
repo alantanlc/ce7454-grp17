@@ -16,11 +16,13 @@ import datetime
 import os, sys
 import matplotlib.pyplot as plt
 from tqdm import tqdm
+import numpy as np
+from sklearn.metrics import roc_curve, auc
 
 parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet", help='model name')
-parser.add_argument('--batchSize', type=int, default=128, help='input batch size - default:128')
-parser.add_argument('--epoch', type=int, default=10, help='number of epochs - default:10')
+parser.add_argument('--batchSize', type=int, default=16, help='input batch size - default:128')
+parser.add_argument('--epoch', type=int, default=3, help='number of epochs - default:10')
 parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
 parser.add_argument('--input_size', type=int, default=224, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
@@ -88,7 +90,6 @@ def set_default_args(args):
 def cal_multilabel_accuracy(logits, targets, thres=0.5):
     #returns list of number of correct predictions for each class, total correct, and total number of samples
     batch_size, num_class = logits.shape
-    total_samples = batch_size * num_class
     total_correct = torch.tensor([0.0 for i in range(num_class)]).long()
     
     logits, targets = logits.cpu(), targets.cpu()
@@ -98,8 +99,22 @@ def cal_multilabel_accuracy(logits, targets, thres=0.5):
     for batch in correct:
         total_correct += batch
     
-    return total_correct, torch.sum(total_correct), total_samples
+    return total_correct, torch.sum(total_correct), batch_size
+
+def compute_auc(all_logits, all_labels):
+    fpr = dict()
+    tpr = dict()
+    roc_auc = dict()
+    assert(len(class_names) == all_labels.shape[-1])
+    for i, c in enumerate(class_names):
+        fpr[c], tpr[c], _ = roc_curve(all_labels[:, i], all_logits[:, i], pos_label=1)
+        roc_auc[c] = auc(fpr[c], tpr[c])
+        
+    # Compute micro-average ROC curve and ROC area
+    fpr["micro"], tpr["micro"], _ = roc_curve(all_labels.ravel(), all_logits.ravel())
+    roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
     
+    return roc_auc
     
 
 
@@ -133,11 +148,11 @@ def main(args):
                 
     train_loader = torch.utils.data.DataLoader(
        train_dataset, batch_size=args.batchSize, shuffle = True,
-       num_workers=4, pin_memory=False)
+       num_workers=8, pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
        valid_dataset, batch_size=args.batchSize  ,shuffle = True,
-       num_workers=4, pin_memory=False)
+       num_workers=8, pin_memory=False)
     current_epoch = 0
     if args.checkpoint:
         model, optimizer, current_epoch = load_checkpoint(args.checkpoint, model, optimizer)
@@ -193,7 +208,9 @@ def main(args):
 def train(train_loader, model, criterion, optimizer, epoch, args):
 
 
-    correct = torch.tensor([0 for i in range(14)])
+    all_logits = None
+    all_labels = None
+    correct = torch.tensor([0.0 for i in range(14)]).long()
     total_correct = 0
     total = 0
     running_loss = 0.0
@@ -216,43 +233,58 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         loss.backward()
         optimizer.step()
         
-        individual_correct, batch_correct, total_samples = cal_multilabel_accuracy(output,target)
+        individual_correct, batch_correct, num_batch = cal_multilabel_accuracy(output,target)
         #add step results to epoch results
         correct += individual_correct
         total_correct += batch_correct
-        total += total_samples
+        total += num_batch
+        
+        #for auc computation
+        output = sigmoid(output)
+        if all_logits is None:
+            all_logits = output.detach().cpu().numpy()
+        else:
+            all_logits = np.concatenate((all_logits, output.detach().cpu().numpy()), axis=0)
+            
+        if all_labels is None:
+            all_labels = target.detach().cpu().numpy()
+        else:    
+            all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
         
 
+    
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct/total
-    individual_acc = 100*correct/input.shape[0]
-    tqdm.write('Epoch: [{0}]\t'
-          'Training Loss {loss:.4f}\t'
-          'Average Acc: {avg_acc:.3f}\t'
-          'Time: {time:.2f}\t'.format(
-           epoch,loss=running_loss, avg_acc=avg_acc, time= TT))
-   
-    message = '== Training: Individual_Acc==\n'
+    avg_acc = 100*total_correct.float()/(total*14)
+    individual_acc = 100*correct.float()/total
+    
+    auc = compute_auc(all_logits, all_labels)
+    
+    message = f"\n\n== Epoch [{epoch}] == \n== Training Performance: ==\n"
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
-        message += f"{c}: {acc}%\t"
+        message += f"{c}: {acc:.05}%\t"
     tqdm.write(message)
     
+    tqdm.write('Training Loss {loss:.4f}\t'
+          'Average Acc: {avg_acc:.3f}\t'
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, auc= auc))
 
     return running_loss, TT, avg_acc, individual_acc
 
 
 
 def validate(val_loader, model, criterion, args):
-
-    # switch to evaluate mode
-    correct = torch.tensor([0 for i in range(14)])
+    
+    all_logits = None
+    all_labels = None
+    correct = torch.tensor([0.0 for i in range(14)]).long()
     total_correct = 0
-    model.eval()
     total = 0
     correct = 0
     running_loss = 0.0
+    
+    model.eval()
     with torch.no_grad():
 
         for i, (input, target) in enumerate(tqdm(val_loader, desc='Val iterations')):
@@ -265,24 +297,39 @@ def validate(val_loader, model, criterion, args):
             output = model(input)
             loss = criterion(output, target)
             running_loss += loss.item()
-            individual_correct, batch_correct, total_samples =cal_multilabel_accuracy(output,target)
+            individual_correct, batch_correct, num_batch =cal_multilabel_accuracy(output,target)
             correct += individual_correct
             total_correct += batch_correct
-            total += total_samples
+            total += num_batch
+            
+            #for auc computation
+            output = sigmoid(output)
+            if all_logits is None:
+                all_logits = output.detach().cpu().numpy()
+            else:
+                all_logits = np.concatenate((all_logits, output.detach().cpu().numpy()), axis=0)
+                
+            if all_labels is None:
+                all_labels = target.detach().cpu().numpy()
+            else:    
+                all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
 
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct/total
-    individual_acc = 100*correct/input.shape[0]
-    tqdm.write('val: \t'
-          'Loss {loss:.4f}\t'
-          'Average Acc: {avg_acc:.3f}\t'.format(loss=running_loss, avg_acc=avg_acc))
-          
-    message = '== Validating: Individual_Acc==\n'
+    avg_acc = 100*total_correct.float()/(total *14)
+    individual_acc = 100*correct.float()/total
+    
+    auc = compute_auc(all_logits, all_labels)
+    
+    message = '== Validation Performance: ==\n'
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
-        message += f"{c}: {acc}%\t"
+        message += f"{c}: {acc:.05}%\t"
     tqdm.write(message)
-
+    
+    tqdm.write('Loss {loss:.4f}\t'
+          'Average Acc: {avg_acc:.3f}\t'
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, auc=auc))
+    
     return running_loss, avg_acc, individual_acc
 
 
