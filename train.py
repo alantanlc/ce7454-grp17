@@ -21,8 +21,7 @@ parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet", help='model name')
 parser.add_argument('--batchSize', type=int, default=128, help='input batch size - default:128')
 parser.add_argument('--epoch', type=int, default=10, help='number of epochs - default:10')
-parser.add_argument('--lr', type=float, default=0.005, help='initial learning rate - default:0.005')
-parser.add_argument('--lr_decay', type=int, default=20, help='decay lr by 10 after _ epoches - default:20')
+parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
 parser.add_argument('--input_size', type=int, default=224, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum - default:0.9')
@@ -33,7 +32,11 @@ parser.add_argument('--save_dir', type=str, default="experiments/", help='path/t
 parser.add_argument('--name', type=str, default=None, help='name of the experiment. It decides where to store samples and models. if none, it will be saved as the date and time')
 parser.add_argument('--finetune', action='store_true', help='use a pretrained checkpoint - default:false')
 
-
+class_names = ['No Finding',
+       'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
+       'Lung Lesion', 'Edema', 'Consolidation', 'Pneumonia', 'Atelectasis',
+       'Pneumothorax', 'Pleural Effusion', 'Pleural Other', 'Fracture',
+       'Support Devices']
 def print_options(opt):
     message = ''
     message += '----------------- Options ---------------\n'
@@ -65,14 +68,15 @@ def mkdir(path):
     if not os.path.exists(path):
         os.makedirs(path)
 
-def adjust_learning_rate(optimizer, epoch, args):
-    """Sets the learning rate to the initial LR decayed by 10 every args.lr_decay epochs"""
-    # lr = 0.00005
-    lr = args.lr * (0.1 ** (epoch // args.lr_decay))
-    # print("LR is " + str(lr)+ " at epoch "+ str(epoch))
-    for param_group in optimizer.param_groups:
-        param_group['lr'] = lr
-    return optimizer
+#using adam
+# def adjust_learning_rate(optimizer, epoch, args):
+#     """Sets the learning rate to the initial LR decayed by 10 every args.lr_decay epochs"""
+#     # lr = 0.00005
+#     lr = args.lr * (0.1 ** (epoch // args.lr_decay))
+#     # print("LR is " + str(lr)+ " at epoch "+ str(epoch))
+#     for param_group in optimizer.param_groups:
+#         param_group['lr'] = lr
+#     return optimizer
 
 def set_default_args(args):
     if not args.name:
@@ -124,9 +128,7 @@ def main(args):
     train_dataset = CheXpertDataset(args,training = True,transforms=xforms_train)
     valid_dataset = CheXpertDataset(args,training = False,transforms=xforms_val)
 
-    optimizer = torch.optim.SGD(model.parameters(), args.lr,
-                                momentum=args.momentum,
-                                weight_decay=args.weight_decay)
+    optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
                 
     train_loader = torch.utils.data.DataLoader(
@@ -151,7 +153,6 @@ def main(args):
 
     for epoch in tqdm(range(current_epoch, args.epoch), desc='Epoch'):
 
-        optimizer = adjust_learning_rate(optimizer, epoch, args)
         # train for one epoch
         epoch_train_loss, TT, train_avg_acc, train_individual_acc = train(train_loader, model, criterion, optimizer, epoch, args)
         training_loss = training_loss + [epoch_train_loss]
@@ -177,7 +178,7 @@ def main(args):
         if (epoch > 1) :
             best = (loss_val < min(val_loss[:len(val_loss)-1]))
             if best:
-                print("saving best performing checkpoint on val")
+                tqdm.write("saving best performing checkpoint on val")
                 save_checkpoint(state, True, args)
 
         save_checkpoint(state, False, args)
@@ -225,12 +226,19 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
     avg_acc = 100*total_correct/total
-    individual_acc = 100*correct/total
+    individual_acc = 100*correct/input.shape[0]
     tqdm.write('Epoch: [{0}]\t'
           'Training Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'
           'Time: {time:.2f}\t'.format(
            epoch,loss=running_loss, avg_acc=avg_acc, time= TT))
+   
+    message = '== Training: Individual_Acc==\n'
+    for i, c in enumerate(class_names):
+        acc = individual_acc[i]
+        message += f"{c}: {acc}%\t"
+    tqdm.write(message)
+    
 
     return running_loss, TT, avg_acc, individual_acc
 
@@ -264,10 +272,16 @@ def validate(val_loader, model, criterion, args):
 
     running_loss =  running_loss/(i+1)
     avg_acc = 100*total_correct/total
-    individual_acc = 100*correct/total
+    individual_acc = 100*correct/input.shape[0]
     tqdm.write('val: \t'
           'Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'.format(loss=running_loss, avg_acc=avg_acc))
+          
+    message = '== Validating: Individual_Acc==\n'
+    for i, c in enumerate(class_names):
+        acc = individual_acc[i]
+        message += f"{c}: {acc}%\t"
+    tqdm.write(message)
 
     return running_loss, avg_acc, individual_acc
 
