@@ -3,6 +3,7 @@ import warnings
 warnings.simplefilter("ignore")
 import torch.optim
 import torch.nn as nn
+from torch.nn.functional import sigmoid
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
@@ -80,6 +81,22 @@ def set_default_args(args):
     args.is_cuda = torch.cuda.is_available()
     args.expr_dir = os.path.join(args.save_dir, args.name)
 
+def cal_multilabel_accuracy(logits, targets, thres=0.5):
+    #returns list of number of correct predictions for each class, total correct, and total number of samples
+    batch_size, num_class = logits.shape
+    total_samples = batch_size * num_class
+    total_correct = torch.tensor([0.0 for i in range(num_class)]).long()
+    
+    logits, targets = logits.cpu(), targets.cpu()
+    probs = sigmoid(logits)
+    pred = (probs>0.5).long()
+    correct = (pred.long()==targets.long()).long()
+    for batch in correct:
+        total_correct += batch
+    
+    return total_correct, torch.sum(total_correct), total_samples
+    
+    
 
 
 def main(args):
@@ -128,7 +145,7 @@ def main(args):
     best = False
 
     print_options(args)
-    training_loss, val_loss, time_taken  =  ([] for i in range(3))
+    training_loss, val_loss, time_taken, train_avg_acc_list, train_individual_acc_list, test_avg_acc_list, test_individual_acc_list  =  ([] for i in range(7))
     best = False
     thres = 0
 
@@ -136,11 +153,16 @@ def main(args):
 
         optimizer = adjust_learning_rate(optimizer, epoch, args)
         # train for one epoch
-        epoch_train_loss, TT = train(train_loader, model, criterion, optimizer, epoch, args)
+        epoch_train_loss, TT, train_avg_acc, train_individual_acc = train(train_loader, model, criterion, optimizer, epoch, args)
         training_loss = training_loss + [epoch_train_loss]
+        train_avg_acc_list += [train_avg_acc]
+        train_individual_acc_list += [train_individual_acc]
+        
         # evaluate on validation set
-        loss_val = validate(val_loader, model, criterion , args)
+        loss_val, test_avg_acc, test_individual_acc = validate(val_loader, model, criterion , args)
         val_loss = val_loss + [loss_val]
+        test_avg_acc_list += [test_avg_acc]
+        test_individual_acc_list += [test_individual_acc]
 
         state = {
             'epoch': epoch,
@@ -161,6 +183,7 @@ def main(args):
         save_checkpoint(state, False, args)
     #
 
+    save_plt([train_avg_acc_list, test_avg_acc_list], ["train_avg_acc", "test_avg_acc"], args)
     save_plt([training_loss, val_loss], ["train_loss", "val_loss"], args)
     save_plt([time_taken], ["time_taken"], args)
 
@@ -169,13 +192,14 @@ def main(args):
 def train(train_loader, model, criterion, optimizer, epoch, args):
 
 
-    correct = 0
+    correct = torch.tensor([0 for i in range(14)])
+    total_correct = 0
     total = 0
     running_loss = 0.0
     # switch to train mode
     model.train()
     stime = time.time()
-    for i, (input, target) in enumerate(tqdm(train_loader, desc='Train iterations:')):
+    for i, (input, target) in enumerate(tqdm(train_loader, desc='Train iterations')):
         # measure data loading time
         target = target.float()
         input = input.float()
@@ -183,36 +207,47 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             target = target.cuda()
             input = input.cuda()
         # compute output
-        output = model(input)
-        # get the max probability of the softmax layer
+        output = model(input)    
         loss = criterion(output, target)
         running_loss += loss.item()
         # compute gradient and do SGD step
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
+        
+        individual_correct, batch_correct, total_samples = cal_multilabel_accuracy(output,target)
+        #add step results to epoch results
+        correct += individual_correct
+        total_correct += batch_correct
+        total += total_samples
+        
 
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
-    print('Epoch: [{0}]\t'
+    avg_acc = 100*total_correct/total
+    individual_acc = 100*correct/total
+    tqdm.write('Epoch: [{0}]\t'
           'Training Loss {loss:.4f}\t'
+          'Average Acc: {avg_acc:.3f}\t'
           'Time: {time:.2f}\t'.format(
-           epoch,loss=running_loss, time= TT))
+           epoch,loss=running_loss, avg_acc=avg_acc, time= TT))
 
-    return running_loss, TT
+    return running_loss, TT, avg_acc, individual_acc
 
 
 
 def validate(val_loader, model, criterion, args):
 
     # switch to evaluate mode
+    correct = torch.tensor([0 for i in range(14)])
+    total_correct = 0
     model.eval()
     total = 0
     correct = 0
     running_loss = 0.0
     with torch.no_grad():
 
-        for i, (input, target) in enumerate(tqdm(val_loader ,desc='Validate iterations:')):
+        for i, (input, target) in enumerate(tqdm(val_loader, desc='Val iterations')):
 
             target = target.float()
             input = input.float()
@@ -222,12 +257,19 @@ def validate(val_loader, model, criterion, args):
             output = model(input)
             loss = criterion(output, target)
             running_loss += loss.item()
+            individual_correct, batch_correct, total_samples =cal_multilabel_accuracy(output,target)
+            correct += individual_correct
+            total_correct += batch_correct
+            total += total_samples
 
     running_loss =  running_loss/(i+1)
-    print('val: \t'
-          'Loss {loss:.4f}\t'.format(loss=running_loss))
+    avg_acc = 100*total_correct/total
+    individual_acc = 100*correct/total
+    tqdm.write('val: \t'
+          'Loss {loss:.4f}\t'
+          'Average Acc: {avg_acc:.3f}\t'.format(loss=running_loss, avg_acc=avg_acc))
 
-    return running_loss
+    return running_loss, avg_acc, individual_acc
 
 
 def weights_init(m):
