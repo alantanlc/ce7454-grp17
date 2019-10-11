@@ -6,9 +6,7 @@ import torch.nn as nn
 from torch.nn.functional import sigmoid
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
-import torchvision.datasets as datasets
 import torchvision.models as models
-from dataset import *
 import numpy as np
 import time
 import argparse
@@ -18,9 +16,12 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 import numpy as np
 from sklearn.metrics import roc_curve, auc
+from networks import *
+from dataset import *
+
 
 parser = argparse.ArgumentParser(description='ce7454')
-parser.add_argument('--model', type=str, default="resnet", help='model name')
+parser.add_argument('--model', type=str, default="resnet18", help='model name')
 parser.add_argument('--batchSize', type=int, default=16, help='input batch size - default:128')
 parser.add_argument('--epoch', type=int, default=3, help='number of epochs - default:10')
 parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
@@ -122,10 +123,10 @@ def main(args):
     set_default_args(args)
     
     # ADD YOUR MODEL NAME HERE
-    if args.model == 'resnet':
-        model = models.resnet18()
-        model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-        model.fc = nn.Linear(512, 14)
+    if args.model == 'resnet18':
+        model = modified_resnet18()
+    elif args.model == 'resnet152':
+        model = modified_resnet152()
 
 
     model.float()
@@ -140,8 +141,8 @@ def main(args):
     xforms_val = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(args.input_size)])
     
     
-    train_dataset = CheXpertDataset(args,training = True,transforms=xforms_train)
-    valid_dataset = CheXpertDataset(args,training = False,transforms=xforms_val)
+    train_dataset = CheXpertDataset(training = True,transform=xforms_train)
+    valid_dataset = CheXpertDataset(training = False,transform=xforms_val)
 
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
@@ -184,7 +185,7 @@ def main(args):
             'epoch': epoch,
             'arch': args.model,
             'state_dict': model.state_dict(),
-            'optimizer' : optimizer.state_dict(),
+            # 'optimizer' : optimizer.state_dict(),
         }
 
         if not os.path.isfile(os.path.join(args.expr_dir, 'model_best.pth.tar')):
@@ -259,8 +260,9 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     individual_acc = 100*correct.float()/total
     
     auc = compute_auc(all_logits, all_labels)
-    
+
     message = f"\n\n== Epoch [{epoch}] == \n== Training Performance: ==\n"
+    
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
         message += f"{c}: {acc:.05}%\t"
