@@ -44,7 +44,7 @@ class CheXpertDataset(Dataset):
         # self.csv.iloc[pathologies_present_idx, 5] = 0.0 
         # no_finding_idx = (self.csv.loc[:,'No Finding'] == 1).index
         # self.csv.iloc[no_finding_idx,6:18] = 0.0
-        self.csv= self.csv.fillna(self.imputation)
+        self.csv= self.csv.fillna(0.0)
         self.csv= self.csv.replace(-1.0,self.imputation)
         self.labels_cols = self.csv.columns[-14:]
         self.img_tensorify = ToTensor()
