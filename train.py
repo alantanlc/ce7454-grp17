@@ -22,10 +22,10 @@ from dataset import *
 
 parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet18", help='model name')
-parser.add_argument('--batchSize', type=int, default=16, help='input batch size - default:128')
+parser.add_argument('--bs', type=int, default=16, help='input batch size - default:128')
 parser.add_argument('--epoch', type=int, default=3, help='number of epochs - default:10')
 parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
-parser.add_argument('--input_size', type=int, default=224, help='input size of the depth image - default:96')
+parser.add_argument('--input_size', type=int, default=320, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum - default:0.9')
 parser.add_argument('--weight_decay', type=float, default=0.0005, help='weight_decay - default:0.0005')
@@ -127,6 +127,12 @@ def main(args):
         model = modified_resnet18()
     elif args.model == 'resnet152':
         model = modified_resnet152()
+    elif args.model == 'densenet121':
+        model = modified_densenet121()
+    elif args.model == 'densenet201':
+        model = modified_densenet201()
+    elif args.model == 'layer_sharing_resnet':
+        model = layer_sharing_resnet()
 
 
     model.float()
@@ -135,10 +141,10 @@ def main(args):
     #model.apply(weights_init)
     cudnn.benchmark = True
     criterion = nn.BCEWithLogitsLoss()
-
-    xforms_train = transforms.Compose([transforms.Resize(256),
+    # mean=127.898, std=74.69748171138374
+    xforms_train = transforms.Compose([transforms.Resize(365),
                                transforms.RandomCrop(args.input_size)])
-    xforms_val = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(args.input_size)])
+    xforms_val = transforms.Compose([transforms.Resize(365), transforms.CenterCrop(args.input_size)])
     
     
     train_dataset = CheXpertDataset(training = True,transform=xforms_train)
@@ -148,11 +154,11 @@ def main(args):
 
                 
     train_loader = torch.utils.data.DataLoader(
-       train_dataset, batch_size=args.batchSize, shuffle = True,
+       train_dataset, batch_size=args.bs, shuffle = True,
        num_workers=8, pin_memory=False)
 
     val_loader = torch.utils.data.DataLoader(
-       valid_dataset, batch_size=args.batchSize  ,shuffle = True,
+       valid_dataset, batch_size=args.bs  ,shuffle = True,
        num_workers=8, pin_memory=False)
     current_epoch = 0
     if args.checkpoint:
@@ -261,7 +267,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     
     auc = compute_auc(all_logits, all_labels)
 
-    message = f"\n\n== Epoch [{epoch}] == \n== Training Performance: ==\n"
+    message = f"\n\n\n== Epoch [{epoch}] == \n== Training Performance: ==\n"
     
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
@@ -322,7 +328,7 @@ def validate(val_loader, model, criterion, args):
     
     auc = compute_auc(all_logits, all_labels)
     
-    message = '== Validation Performance: ==\n'
+    message = '\n== Validation Performance: ==\n'
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
         message += f"{c}: {acc:.05}%\t"
