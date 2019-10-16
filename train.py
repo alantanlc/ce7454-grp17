@@ -19,6 +19,12 @@ from sklearn.metrics import roc_curve, auc
 from networks import *
 from dataset import *
 
+##REPRODUCIBILITY
+seed=42
+torch.manual_seed(seed)
+torch.backends.cudnn.deterministic = True
+torch.backends.cudnn.benchmark = False
+np.random.seed(seed)
 
 parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet18", help='model name')
@@ -114,6 +120,9 @@ def compute_auc(all_logits, all_labels):
     # Compute micro-average ROC curve and ROC area
     fpr["micro"], tpr["micro"], _ = roc_curve(all_labels.ravel(), all_logits.ravel())
     roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
+    # atelectasis - 8, cardiomegaly - 2, consolidation - 6, edema - 5, pleural effusion - 10    
+    fpr["micro_5"], tpr["micro_5"], _ = roc_curve(all_labels[:,[8,2,6,5,10]].ravel(), all_logits[:,[8,2,6,5,10]].ravel())
+    roc_auc["micro_5"] = auc(fpr["micro_5"], tpr["micro_5"])
     
     return roc_auc
     
@@ -133,6 +142,10 @@ def main(args):
         model = modified_densenet201()
     elif args.model == 'layer_sharing_resnet':
         model = layer_sharing_resnet()
+    elif args.model == 'ensembling_network':
+        model = ensembling_network()
+    else:
+        print(f'~~~ {args.model} not found! ~~~')
 
 
     model.float()
@@ -219,7 +232,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     all_labels = None
     correct = torch.tensor([0.0 for i in range(14)]).long()
     total_correct = 0
-    total = 0
+    total_batches = 0
     running_loss = 0.0
     # switch to train mode
     model.train()
@@ -244,7 +257,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         #add step results to epoch results
         correct += individual_correct
         total_correct += batch_correct
-        total += num_batch
+        total_batches += num_batch
         
         #for auc computation
         output = sigmoid(output)
@@ -259,11 +272,11 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
         
 
-    
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct.float()/(total*14)
-    individual_acc = 100*correct.float()/total
+    avg_acc = 100*total_correct.float()/(total_batches*14)
+    avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    individual_acc = 100*correct.float()/total_batches
     
     auc = compute_auc(all_logits, all_labels)
 
@@ -276,7 +289,8 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     
     tqdm.write('Training Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'
-          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, auc= auc))
+          'Average Acc for 5 labels: {avg_acc_5:.3f}'
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc= auc))
 
     return running_loss, TT, avg_acc, individual_acc
 
@@ -288,7 +302,7 @@ def validate(val_loader, model, criterion, args):
     all_labels = None
     correct = torch.tensor([0.0 for i in range(14)]).long()
     total_correct = 0
-    total = 0
+    total_batches = 0
     correct = 0
     running_loss = 0.0
     
@@ -308,7 +322,7 @@ def validate(val_loader, model, criterion, args):
             individual_correct, batch_correct, num_batch =cal_multilabel_accuracy(output,target)
             correct += individual_correct
             total_correct += batch_correct
-            total += num_batch
+            total_batches += num_batch
             
             #for auc computation
             output = sigmoid(output)
@@ -323,8 +337,9 @@ def validate(val_loader, model, criterion, args):
                 all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
 
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct.float()/(total *14)
-    individual_acc = 100*correct.float()/total
+    avg_acc = 100*total_correct.float()/(total_batches *14)
+    avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    individual_acc = 100*correct.float()/total_batches
     
     auc = compute_auc(all_logits, all_labels)
     
@@ -336,7 +351,8 @@ def validate(val_loader, model, criterion, args):
     
     tqdm.write('Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'
-          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, auc=auc))
+          'Average Acc for 5 labels: {avg_acc_5:.3f}'
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc=auc))
     
     return running_loss, avg_acc, individual_acc
 

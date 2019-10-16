@@ -63,8 +63,8 @@ class CheXpertDataset(Dataset):
 
 
     def __len__(self):
-        # return self.csv.shape[0]
-        return 100
+        return self.csv.shape[0]
+        # return 200
 
     def __getitem__(self, index):
         pth = os.path.join('data',self.csv.loc[index, 'Path'])
