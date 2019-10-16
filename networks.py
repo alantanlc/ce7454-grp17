@@ -5,28 +5,28 @@ import torch.nn.functional as F
 from torchvision.models.resnet import BasicBlock
 
 
-def modified_resnet18():
+def modified_resnet18(num_classes=14):
     model = models.resnet18()
     model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    model.fc = nn.Linear(512, 14)
+    model.fc = nn.Linear(512, num_classes)
     return model
     
-def modified_resnet152(num_layers=14):
+def modified_resnet152(num_classes=14):
     model = models.resnet152()
     model.conv1 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    model.fc = nn.Linear(2048, num_layers)
+    model.fc = nn.Linear(2048, num_classes)
     return model
     
-def modified_densenet121(num_layers=14):
+def modified_densenet121(num_classes=14):
     model = models.densenet121()
     model.features.conv0 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    model.classifier = nn.Linear(1024, num_layers)
+    model.classifier = nn.Linear(1024, num_classes)
     return model
     
-def modified_densenet201(num_layers=14):
+def modified_densenet201(num_classes=14):
     model = models.densenet201()
     model.features.conv0 = nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False)
-    model.classifier = nn.Linear(1920, num_layers)
+    model.classifier = nn.Linear(1920, num_classes)
     return model
     
 class layer_sharing_resnet(nn.Module):

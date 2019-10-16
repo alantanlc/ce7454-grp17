@@ -25,7 +25,9 @@ class_names = ['No Finding',
 # mean=127.898, std=74.69748171138374
 
 class CheXpertDataset(Dataset):
-    def __init__(self, training=True, imputation=1.0, transform = None, test=None):
+    def __init__(self, training=True, imputation=1.0, num_classes=14, view='both', transform = None, test=None):
+        assert((num_classes==14) or (num_classes==5))
+        self.num_classes= num_classes
         self.training = training
         self.transforms = transform
         self.imputation=imputation
@@ -33,11 +35,19 @@ class CheXpertDataset(Dataset):
             self.csv = pd.read_csv('data/CheXpert-v1.0-small/train.csv')
         else:
             self.csv = pd.read_csv('data/CheXpert-v1.0-small/valid.csv')
-        
+        if view=='frontal':
+            self.csv = self.csv.loc[self.csv['Frontal/Lateral'] == 'Frontal']
+            self.csv = self.csv.reset_index(drop=True)
+        elif view=='lateral':
+             self.csv = self.csv.loc[self.csv['Frontal/Lateral'] == 'Lateral']
+             self.csv = self.csv.reset_index(drop=True)
         #if test present overrides train/val
         if test != None:
             self.csv = pd.read_csv(test)
             self.transforms = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
+            self.csv['Study'] = [row[3] for row in self.csv.Path.str.split('/')]
+            self.csv['Patient_no'] = [row[2] for row in self.csv.Path.str.split('/')]
+
         
         #change no_finding to 0 if any pathology present
         # pathologies_present_idx = (self.csv.iloc[:,6:18]==1).any(1).index
@@ -47,7 +57,7 @@ class CheXpertDataset(Dataset):
         # self.csv.iloc[no_finding_idx,6:18] = 0.0
         self.csv= self.csv.fillna(0.0)
         self.csv= self.csv.replace(-1.0,self.imputation)
-        self.labels_cols = self.csv.columns[-14:]
+        self.labels_cols = class_names
         self.img_tensorify = ToTensor()
         self.normalize = Normalize(mean=[127],std=[74.69])
         
@@ -64,17 +74,21 @@ class CheXpertDataset(Dataset):
 
     def __len__(self):
         return self.csv.shape[0]
-        # return 200
+        # return 100
 
     def __getitem__(self, index):
         pth = os.path.join('data',self.csv.loc[index, 'Path'])
         labels = self.csv.loc[index, self.labels_cols]
+        if self.num_classes==5:
+            labels = labels[[8,2,6,5,10]]
 
         img = Image.open(pth)
         
         if self.transforms != None:
             img = self.transforms(img)
-        img = self.normalize(self.img_tensorify(img))
+        img = self.img_tensorify(img)
+        # img = self.normalize(img) 
+            
         return img, torch.Tensor(labels)
 
     def cal_mean_std(self):

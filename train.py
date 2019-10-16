@@ -29,7 +29,7 @@ np.random.seed(seed)
 parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet18", help='model name')
 parser.add_argument('--bs', type=int, default=16, help='input batch size - default:128')
-parser.add_argument('--epoch', type=int, default=3, help='number of epochs - default:10')
+parser.add_argument('--epoch', type=int, default=5, help='number of epochs - default:10')
 parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
 parser.add_argument('--input_size', type=int, default=320, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
@@ -41,11 +41,17 @@ parser.add_argument('--save_dir', type=str, default="experiments/", help='path/t
 parser.add_argument('--name', type=str, default=None, help='name of the experiment. It decides where to store samples and models. if none, it will be saved as the date and time')
 parser.add_argument('--finetune', action='store_true', help='use a pretrained checkpoint - default:false')
 
+parser.add_argument('--view', type=str, default='both', help='dataset view - frontal, lateral, both(default)')
+parser.add_argument('--num_classes', type=int, default=14, help='number of epochs - default:10')
+
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
        'Lung Lesion', 'Edema', 'Consolidation', 'Pneumonia', 'Atelectasis',
        'Pneumothorax', 'Pleural Effusion', 'Pleural Other', 'Fracture',
        'Support Devices']
+global best_auc_val
+best_auc_val = {'Atelectasis':[-9.99,-9.99], 'Cardiomegaly':[-9.99,-9.99], 'Consolidation':[-9.99,-9.99], 'Edema':[-9.99,-9.99], 'Pleural Effusion':[-9.99,-9.99]}
+
 def print_options(opt):
     message = ''
     message += '----------------- Options ---------------\n'
@@ -108,11 +114,15 @@ def cal_multilabel_accuracy(logits, targets, thres=0.5):
     
     return total_correct, torch.sum(total_correct), batch_size
 
-def compute_auc(all_logits, all_labels):
+def compute_auc(all_logits, all_labels, num_classes=14):
     fpr = dict()
     tpr = dict()
     roc_auc = dict()
-    assert(len(class_names) == all_labels.shape[-1])
+    assert(num_classes == all_labels.shape[-1])
+    if num_classes == 5:
+        global class_names
+        if len(class_names) !=5:
+            class_names = [class_names[i] for i in [8,2,6,5,10]]
     for i, c in enumerate(class_names):
         fpr[c], tpr[c], _ = roc_curve(all_labels[:, i], all_logits[:, i], pos_label=1)
         roc_auc[c] = auc(fpr[c], tpr[c])
@@ -120,10 +130,14 @@ def compute_auc(all_logits, all_labels):
     # Compute micro-average ROC curve and ROC area
     fpr["micro"], tpr["micro"], _ = roc_curve(all_labels.ravel(), all_logits.ravel())
     roc_auc["micro"] = auc(fpr["micro"], tpr["micro"])
-    # atelectasis - 8, cardiomegaly - 2, consolidation - 6, edema - 5, pleural effusion - 10    
-    fpr["micro_5"], tpr["micro_5"], _ = roc_curve(all_labels[:,[8,2,6,5,10]].ravel(), all_logits[:,[8,2,6,5,10]].ravel())
-    roc_auc["micro_5"] = auc(fpr["micro_5"], tpr["micro_5"])
+    # atelectasis - 8, cardiomegaly - 2, consolidation - 6, edema - 5, pleural effusion - 10 
+    if args.num_classes==14:   
+        fpr["micro_5"], tpr["micro_5"], _ = roc_curve(all_labels[:,[8,2,6,5,10]].ravel(), all_logits[:,[8,2,6,5,10]].ravel())
+        roc_auc["micro_5"] = auc(fpr["micro_5"], tpr["micro_5"])
     
+    #prettify
+    for key in roc_auc.keys():
+        roc_auc[key] = round(roc_auc[key], 3)
     return roc_auc
     
 
@@ -133,17 +147,17 @@ def main(args):
     
     # ADD YOUR MODEL NAME HERE
     if args.model == 'resnet18':
-        model = modified_resnet18()
+        model = modified_resnet18(num_classes=args.num_classes)
     elif args.model == 'resnet152':
-        model = modified_resnet152()
+        model = modified_resnet152(num_classes=args.num_classes)
     elif args.model == 'densenet121':
-        model = modified_densenet121()
+        model = modified_densenet121(num_classes=args.num_classes)
     elif args.model == 'densenet201':
-        model = modified_densenet201()
+        model = modified_densenet201(num_classes=args.num_classes)
     elif args.model == 'layer_sharing_resnet':
-        model = layer_sharing_resnet()
+        model = layer_sharing_resnet(num_classes=args.num_classes)
     elif args.model == 'ensembling_network':
-        model = ensembling_network()
+        model = ensembling_network(num_classes=args.num_classes)
     else:
         print(f'~~~ {args.model} not found! ~~~')
 
@@ -160,8 +174,8 @@ def main(args):
     xforms_val = transforms.Compose([transforms.Resize(365), transforms.CenterCrop(args.input_size)])
     
     
-    train_dataset = CheXpertDataset(training = True,transform=xforms_train)
-    valid_dataset = CheXpertDataset(training = False,transform=xforms_val)
+    train_dataset = CheXpertDataset(training = True,transform=xforms_train, view=args.view, num_classes=args.num_classes)
+    valid_dataset = CheXpertDataset(training = False,transform=xforms_val, view=args.view,num_classes=args.num_classes)
 
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
@@ -195,7 +209,7 @@ def main(args):
         train_individual_acc_list += [train_individual_acc]
         
         # evaluate on validation set
-        loss_val, test_avg_acc, test_individual_acc = validate(val_loader, model, criterion , args)
+        loss_val, test_avg_acc, test_individual_acc = validate(val_loader, model, criterion , args, epoch)
         val_loss = val_loss + [loss_val]
         test_avg_acc_list += [test_avg_acc]
         test_individual_acc_list += [test_individual_acc]
@@ -218,7 +232,10 @@ def main(args):
 
         save_checkpoint(state, False, args)
     #
-
+    
+    print('\nBEST AUC FOR 5 EVAL CLASSES [AUC, EPOCH]')
+    print ('\t'.join([f'{key}:{best_auc_val[key]}'for key in best_auc_val]))
+    
     save_plt([train_avg_acc_list, test_avg_acc_list], ["train_avg_acc", "test_avg_acc"], args)
     save_plt([training_loss, val_loss], ["train_loss", "val_loss"], args)
     save_plt([time_taken], ["time_taken"], args)
@@ -230,7 +247,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
     all_logits = None
     all_labels = None
-    correct = torch.tensor([0.0 for i in range(14)]).long()
+    correct = torch.tensor([0.0 for i in range(args.num_classes)]).long()
     total_correct = 0
     total_batches = 0
     running_loss = 0.0
@@ -274,13 +291,16 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
 
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct.float()/(total_batches*14)
-    avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    avg_acc = 100*total_correct.float()/(total_batches*args.num_classes)
+    if args.num_classes == 14:
+        avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    else:
+        avg_acc_5 = 0.0
     individual_acc = 100*correct.float()/total_batches
     
-    auc = compute_auc(all_logits, all_labels)
+    auc = compute_auc(all_logits, all_labels, num_classes=args.num_classes)
 
-    message = f"\n\n\n== Epoch [{epoch}] == \n== Training Performance: ==\n"
+    message = f"\n\n\n======= Epoch [{epoch}] ======= \n== Training Performance: ==\n"
     
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
@@ -290,17 +310,17 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
     tqdm.write('Training Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'
           'Average Acc for 5 labels: {avg_acc_5:.3f}'
-          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc= auc))
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc= '\n'.join([f'{key}:{auc[key]}'for key in auc])))
 
     return running_loss, TT, avg_acc, individual_acc
 
 
 
-def validate(val_loader, model, criterion, args):
+def validate(val_loader, model, criterion, args, epoch):
     
     all_logits = None
     all_labels = None
-    correct = torch.tensor([0.0 for i in range(14)]).long()
+    correct = torch.tensor([0.0 for i in range(args.num_classes)]).long()
     total_correct = 0
     total_batches = 0
     correct = 0
@@ -337,13 +357,16 @@ def validate(val_loader, model, criterion, args):
                 all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
 
     running_loss =  running_loss/(i+1)
-    avg_acc = 100*total_correct.float()/(total_batches *14)
-    avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    avg_acc = 100*total_correct.float()/(total_batches *args.num_classes)
+    if args.num_classes == 14:
+        avg_acc_5 = 100*torch.sum(correct[[8,2,6,5,10]]).float()/(total_batches*5)
+    else:
+        avg_acc_5 = 0
     individual_acc = 100*correct.float()/total_batches
     
-    auc = compute_auc(all_logits, all_labels)
+    auc = compute_auc(all_logits, all_labels,num_classes=args.num_classes)
     
-    message = '\n== Validation Performance: ==\n'
+    message = '\n\n== Validation Performance: ==\n'
     for i, c in enumerate(class_names):
         acc = individual_acc[i]
         message += f"{c}: {acc:.05}%\t"
@@ -352,7 +375,12 @@ def validate(val_loader, model, criterion, args):
     tqdm.write('Loss {loss:.4f}\t'
           'Average Acc: {avg_acc:.3f}\t'
           'Average Acc for 5 labels: {avg_acc_5:.3f}'
-          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc=auc))
+          '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc='\n'.join([f'{key}:{auc[key]}'for key in auc])))
+    
+
+    for key in best_auc_val.keys():
+        if auc[key] > best_auc_val[key][0]:
+            best_auc_val[key] = [auc[key], epoch]
     
     return running_loss, avg_acc, individual_acc
 
