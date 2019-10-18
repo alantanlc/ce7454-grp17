@@ -399,7 +399,7 @@ def save_checkpoint(state, is_best, opt, filename='checkpoint.pth.tar'):
 def load_checkpoint(path, model, optimizer):
     checkpoint = torch.load(path)
     model.load_state_dict(checkpoint['state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer'])
+    # optimizer.load_state_dict(checkpoint['optimizer'])
     epoch  = checkpoint['epoch']
 
     return model, optimizer, epoch

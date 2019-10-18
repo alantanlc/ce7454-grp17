@@ -63,14 +63,13 @@ class CheXpertDataset(Dataset):
         
         
         if test == None:
+            print('number of samples in dataset', self.csv.shape[0], 'Training:', self.training)
             eda = ''
             for name in class_names:
                 eda += f'{name}: '
                 eda += str(self.csv[name].value_counts().to_dict())
                 eda += '\n'
             print(eda)
-            print('number of samples in dataset', self.csv.shape[0], 'Training:', self.training)
-
 
     def __len__(self):
         return self.csv.shape[0]
