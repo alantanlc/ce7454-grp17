@@ -204,7 +204,8 @@ def main(args):
     thres = 0
 
     # Starting out with TensorBoard (Network Graph and Images)
-    tb = SummaryWriter()
+    comment = f' model={args.model} batch_size={args.bs} lr={args.lr} epoch={args.epoch}'
+    tb = SummaryWriter(comment=comment)
     images = [train_dataset[x][0] for x in range(0, 10)]
     labels = [train_dataset[x][1] for x in range(0, 10)]
     grid = torchvision.utils.make_grid(images)
@@ -247,8 +248,9 @@ def main(args):
         tb.add_scalar('Number Correct', total_correct, epoch)
         tb.add_scalar('Accuracy', train_avg_acc, epoch)
 
-        tb.add_histogram('conv1.weight', model.conv1.weight, epoch)
-        tb.add_histogram('conv1.weight.grad', model.conv1.weight.grad, epoch)
+        for name, weight in model.named_parameters():
+            tb.add_histogram(name, weight, epoch)
+            tb.add_histogram(f'{name}.grad', weight.grad, epoch)
     
     print('\nBEST AUC FOR 5 EVAL CLASSES [AUC, EPOCH]')
     print ('\t'.join([f'{key}:{best_auc_val[key]}'for key in best_auc_val]))
