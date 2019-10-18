@@ -32,9 +32,9 @@ class CheXpertDataset(Dataset):
         self.transforms = transform
         self.imputation=imputation
         if self.training:
-            self.csv = pd.read_csv('data/CheXpert-v1.0-small/train.csv')
+            self.csv = pd.read_csv('temp/train_small.csv')
         else:
-            self.csv = pd.read_csv('data/CheXpert-v1.0-small/valid.csv')
+            self.csv = pd.read_csv('temp/valid_small.csv')
         if view=='frontal':
             self.csv = self.csv.loc[self.csv['Frontal/Lateral'] == 'Frontal']
             self.csv = self.csv.reset_index(drop=True)

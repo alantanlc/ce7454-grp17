@@ -19,6 +19,9 @@ from sklearn.metrics import roc_curve, auc
 from networks import *
 from dataset import *
 
+import torchvision
+from torch.utils.tensorboard import SummaryWriter
+
 ##REPRODUCIBILITY
 seed=42
 torch.manual_seed(seed)
@@ -200,10 +203,18 @@ def main(args):
     best = False
     thres = 0
 
+    # Starting out with TensorBoard (Network Graph and Images)
+    tb = SummaryWriter()
+    images = [train_dataset[x][0] for x in range(0, 10)]
+    labels = [train_dataset[x][1] for x in range(0, 10)]
+    grid = torchvision.utils.make_grid(images)
+    tb.add_image('images', grid)
+    # tb.add_graph(model, images[0].unsqueeze(0))
+
     for epoch in tqdm(range(current_epoch, args.epoch), desc='Epoch'):
 
         # train for one epoch
-        epoch_train_loss, TT, train_avg_acc, train_individual_acc = train(train_loader, model, criterion, optimizer, epoch, args)
+        epoch_train_loss, TT, train_avg_acc, train_individual_acc, total_correct = train(train_loader, model, criterion, optimizer, epoch, args)
         training_loss = training_loss + [epoch_train_loss]
         train_avg_acc_list += [train_avg_acc]
         train_individual_acc_list += [train_individual_acc]
@@ -231,7 +242,13 @@ def main(args):
                 save_checkpoint(state, True, args)
 
         save_checkpoint(state, False, args)
-    #
+
+        tb.add_scalar('Loss', epoch_train_loss, epoch)
+        tb.add_scalar('Number Correct', total_correct, epoch)
+        tb.add_scalar('Accuracy', train_avg_acc, epoch)
+
+        tb.add_histogram('conv1.weight', model.conv1.weight, epoch)
+        tb.add_histogram('conv1.weight.grad', model.conv1.weight.grad, epoch)
     
     print('\nBEST AUC FOR 5 EVAL CLASSES [AUC, EPOCH]')
     print ('\t'.join([f'{key}:{best_auc_val[key]}'for key in best_auc_val]))
@@ -239,6 +256,9 @@ def main(args):
     save_plt([train_avg_acc_list, test_avg_acc_list], ["train_avg_acc", "test_avg_acc"], args)
     save_plt([training_loss, val_loss], ["train_loss", "val_loss"], args)
     save_plt([time_taken], ["time_taken"], args)
+
+    # Close SummaryWriter
+    tb.close()
 
     
     
@@ -312,7 +332,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
           'Average Acc for 5 labels: {avg_acc_5:.3f}'
           '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc= '\n'.join([f'{key}:{auc[key]}'for key in auc])))
 
-    return running_loss, TT, avg_acc, individual_acc
+    return running_loss, TT, avg_acc, individual_acc, total_correct
 
 
 
