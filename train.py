@@ -211,7 +211,7 @@ def main(args):
     labels = [train_dataset[x][1] for x in range(0, 10)]
     grid = torchvision.utils.make_grid(images, 4)
     tb.add_image('images', grid)
-    # tb.add_graph(model, images[0].unsqueeze(0))
+    tb.add_graph(model, images[0].unsqueeze(0))
 
     # Generate figure for count of images by class
     fig = plt.figure()
@@ -272,6 +272,8 @@ def main(args):
         tb.add_scalar('training accuracy', train_avg_acc, epoch)
 
         # Add model parameters to histogram on TensorBoard
+        # NOTE: Saving histograms is expensive. Both in computation time and storage.
+        # If training slows down after using this package, check this first.
         for name, weight in model.named_parameters():
             tb.add_histogram(name, weight, epoch)
             tb.add_histogram(f'{name}.grad', weight.grad, epoch)
