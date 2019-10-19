@@ -19,6 +19,7 @@ from sklearn.metrics import roc_curve, auc
 from networks import *
 from dataset import *
 
+import seaborn as sns
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
 
@@ -142,8 +143,6 @@ def compute_auc(all_logits, all_labels, num_classes=14):
     for key in roc_auc.keys():
         roc_auc[key] = round(roc_auc[key], 3)
     return roc_auc
-    
-
 
 def main(args):
     set_default_args(args)
@@ -203,14 +202,26 @@ def main(args):
     best = False
     thres = 0
 
-    # Starting out with TensorBoard (Network Graph and Images)
+    # Starting out with TensorBoard
     comment = f' model={args.model} batch_size={args.bs} lr={args.lr} epoch={args.epoch}'
     tb = SummaryWriter(comment=comment)
+
+    # Add network graph and images to TensorBoard 
     images = [train_dataset[x][0] for x in range(0, 10)]
     labels = [train_dataset[x][1] for x in range(0, 10)]
-    grid = torchvision.utils.make_grid(images)
+    grid = torchvision.utils.make_grid(images, 4)
     tb.add_image('images', grid)
     # tb.add_graph(model, images[0].unsqueeze(0))
+
+    # Generate figure for number of images by class
+    fig = plt.figure()
+    class_counts = []
+    for name in class_names:
+        class_counts.append(len(train_dataset) - train_dataset.csv[name].value_counts().values[0])
+    sns.barplot(class_names, class_counts)
+    plt.xlabel('classes')
+    plt.ylabel('count')
+    tb.add_figure('Number of images by class', fig)
 
     for epoch in tqdm(range(current_epoch, args.epoch), desc='Epoch'):
 
@@ -244,10 +255,12 @@ def main(args):
 
         save_checkpoint(state, False, args)
 
+        # Add loss, number of correct and accuracy to TensorBoard
         tb.add_scalar('Loss', epoch_train_loss, epoch)
         tb.add_scalar('Number Correct', total_correct, epoch)
         tb.add_scalar('Accuracy', train_avg_acc, epoch)
 
+        # Add model parameters to histogram on TensorBoard
         for name, weight in model.named_parameters():
             tb.add_histogram(name, weight, epoch)
             tb.add_histogram(f'{name}.grad', weight.grad, epoch)
@@ -261,8 +274,6 @@ def main(args):
 
     # Close SummaryWriter
     tb.close()
-
-    
     
 def train(train_loader, model, criterion, optimizer, epoch, args):
 
