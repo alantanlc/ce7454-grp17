@@ -213,15 +213,26 @@ def main(args):
     tb.add_image('images', grid)
     # tb.add_graph(model, images[0].unsqueeze(0))
 
-    # Generate figure for number of images by class
+    # Generate figure for count of images by class
     fig = plt.figure()
-    class_counts = []
+    count_images_by_class = []
     for name in class_names:
-        class_counts.append(len(train_dataset) - train_dataset.csv[name].value_counts().values[0])
-    sns.barplot(class_names, class_counts)
-    plt.xlabel('classes')
+        count_images_by_class.append(len(train_dataset) - train_dataset.csv[name].value_counts().values[0])
+    sns.barplot(class_names, count_images_by_class)
+    plt.xlabel('class')
     plt.ylabel('count')
-    tb.add_figure('Number of images by class', fig)
+    tb.add_figure('count of images by class', fig)
+
+    # Generate figure for count of images by number of class of image
+    fig = plt.figure()
+    count_images_by_num_class = np.zeros(len(class_names)+1)
+    for i in range(len(train_dataset)):
+        count = (train_dataset[i][1] == 1.0).sum(dim=0)
+        count_images_by_num_class[count] = count_images_by_num_class[count] + 1
+    sns.barplot(np.arange(15), count_images_by_num_class)
+    plt.xlabel('number of classes')
+    plt.ylabel('count')
+    tb.add_figure('count of images by number of classes', fig)
 
     for epoch in tqdm(range(current_epoch, args.epoch), desc='Epoch'):
 
@@ -256,9 +267,9 @@ def main(args):
         save_checkpoint(state, False, args)
 
         # Add loss, number of correct and accuracy to TensorBoard
-        tb.add_scalar('Loss', epoch_train_loss, epoch)
-        tb.add_scalar('Number Correct', total_correct, epoch)
-        tb.add_scalar('Accuracy', train_avg_acc, epoch)
+        tb.add_scalar('training loss', epoch_train_loss, epoch)
+        tb.add_scalar('training number of correct', total_correct, epoch)
+        tb.add_scalar('training accuracy', train_avg_acc, epoch)
 
         # Add model parameters to histogram on TensorBoard
         for name, weight in model.named_parameters():
