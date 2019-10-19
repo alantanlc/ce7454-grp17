@@ -207,11 +207,15 @@ def main(args):
     tb = SummaryWriter(comment=comment)
 
     # Add network graph and images to TensorBoard 
-    images = [train_dataset[x][0] for x in range(0, 10)]
-    labels = [train_dataset[x][1] for x in range(0, 10)]
+    images = torch.Tensor([train_dataset[x][0].tolist() for x in range(0, 10)])
+    labels = [train_dataset[x][1].tolist() for x in range(0, 10)]
     grid = torchvision.utils.make_grid(images, 4)
     tb.add_image('images', grid)
-    tb.add_graph(model, images[0].unsqueeze(0))
+    tb.add_graph(model, images)
+
+    # # Add a projector to TensorBoard
+    features = images.view(-1, 320 * 320)
+    tb.add_embedding(features)
 
     # Generate figure for count of images by class
     fig = plt.figure()
