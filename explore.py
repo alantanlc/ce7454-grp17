@@ -17,7 +17,6 @@ sns.barplot(frontal_lateral_counts.index, frontal_lateral_counts.values, alpha =
 plt.xticks(rotation = 'vertical')
 plt.xlabel('Fracture labels', fontsize = 12)
 plt.ylabel('Counts', fontsize = 12)
-plt.show()
 
 # Distribution of target variable
 label_counts = []
@@ -29,14 +28,13 @@ sns.barplot(labels, label_counts, alpha = 0.9)
 plt.xticks(rotation = 'vertical')
 plt.xlabel('Classes', fontsize=10)
 plt.ylabel('Counts', fontsize=10)
-plt.show()
 
 # Distribution of the variable 'age'
-# ax = plt.figure(figsize=(30, 8))
-# sns.countplot(train.Age)
-# axis_font = {'fontname': 'Arial', 'size':'24'}
-# plt.xlabel('age', **axis_font)
-# plt.ylabel('Count', **axis_font)
-# plt.show()
+ax = plt.figure(figsize=(30, 8))
+sns.countplot(train.Age)
+axis_font = {'fontname': 'Arial', 'size':'24'}
+plt.xlabel('age', **axis_font)
+plt.ylabel('Count', **axis_font)
 
+plt.show()
 print('End of program')
