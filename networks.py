@@ -158,15 +158,15 @@ class final_prediction_model(nn.Module):
         super(final_prediction_model, self).__init__()
         self.num_class = num_classes
         if model1 == None:
-            model1 = modified_resnet18()
+            self.model1 = modified_resnet18(num_classes=self.num_class)
         else:
             self.model1 = model1
         if model2 == None:
-            model2 = modified_resnet152()
+            self.model2 = modified_resnet152(num_classes=self.num_class)
         else:
             self.model2 = model2
         if model3 == None:
-            model3= modified_densenet121()
+            self.model3= modified_densenet121(num_classes=self.num_class)
         else:
             self.model3 = model3
             
