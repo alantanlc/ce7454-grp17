@@ -42,7 +42,7 @@ parser.add_argument('--name', type=str, default=None, help='name of the experime
 parser.add_argument('--finetune', action='store_true', help='use a pretrained checkpoint - default:false')
 
 parser.add_argument('--view', type=str, default='both', help='dataset view - frontal, lateral, both(default)')
-parser.add_argument('--num_classes', type=int, default=14, help='number of epochs - default:10')
+parser.add_argument('--num_classes', type=int, default=5, help='number of classes - default:5')
 
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
@@ -158,6 +158,45 @@ def main(args):
         model = layer_sharing_resnet(num_classes=args.num_classes)
     elif args.model == 'ensembling_network':
         model = ensembling_network(num_classes=args.num_classes)
+    elif args.model == 'masked_duo_model':
+        frontal_path = 'experiments/resnet18_frontal_5_equalized/model_best.pth.tar'
+        lateral_path = 'experiments/resnet18_lateral_5_equalized/model_best.pth.tar'
+        frontal_model = modified_resnet18(num_classes=args.num_classes)
+        frontal_model, _, _ = load_checkpoint(frontal_path , frontal_model,'foo')
+        lateral_model = modified_resnet18(num_classes=args.num_classes)
+        lateral_model, _, _ = load_checkpoint(lateral_path, lateral_model, 'foo')
+        model = masked_duo_model(frontal_model, lateral_model)
+    elif args.model == 'masked_duo_model_freeze':
+        frontal_path = 'experiments/resnet18_frontal_5_equalized/model_best.pth.tar'
+        lateral_path = 'experiments/resnet18_lateral_5_equalized/model_best.pth.tar'
+        frontal_model = modified_resnet18(num_classes=args.num_classes)
+        frontal_model, _, _ = load_checkpoint(frontal_path , frontal_model,'foo')
+        for param in frontal_model.parameters():
+            param.requires_grad = False
+        lateral_model = modified_resnet18(num_classes=args.num_classes)
+        lateral_model, _, _ = load_checkpoint(lateral_path, lateral_model, 'foo')
+        for param in lateral_model.parameters():
+            param.requires_grad = False
+        model = masked_duo_model(frontal_model, lateral_model)
+    elif args.model == 'anytime_prediction_model':
+        model = anytime_prediction_model(num_classes=args.num_classes)
+    elif args.model == 'final_prediction_model':
+        model1_path = 'experiments/resnet18_both_5/model_best.pth.tar'
+        model2_path = 'experiments/resnet152_both_5/model_best.pth.tar'
+        model3_path = 'experiments/densenet121_both_5/model_best.pth.tar'
+        model1 = modified_resnet18(num_classes=args.num_classes)
+        model1, _, _ = load_checkpoint(model1_path , model1,'foo')
+        for param in model1.parameters():
+            param.requires_grad = False
+        model2 = modified_resnet152(num_classes=args.num_classes)
+        model2, _, _ = load_checkpoint(model2_path, model2, 'foo')
+        for param in model2.parameters():
+            param.requires_grad = False
+        model3 = modified_densenet121(num_classes=args.num_classes)
+        model3, _, _ = load_checkpoint(model3_path, model3, 'foo')
+        for param in model3.parameters():
+            param.requires_grad = False
+        model = final_prediction_model(model1, model2, model3)
     else:
         print(f'~~~ {args.model} not found! ~~~')
 
@@ -168,6 +207,7 @@ def main(args):
     #model.apply(weights_init)
     cudnn.benchmark = True
     criterion = nn.BCEWithLogitsLoss()
+    
     # mean=127.898, std=74.69748171138374
     xforms_train = transforms.Compose([transforms.Resize(365),
                                transforms.RandomCrop(args.input_size)])
@@ -176,7 +216,9 @@ def main(args):
     
     train_dataset = CheXpertDataset(training = True,transform=xforms_train, view=args.view, num_classes=args.num_classes)
     valid_dataset = CheXpertDataset(training = False,transform=xforms_val, view=args.view,num_classes=args.num_classes)
-
+    if args.model == 'masked_duo_model' or args.model == 'masked_duo_model_freeze':
+        train_dataset = CheXpertDataset_paired(training = True,transform=xforms_train, num_classes=args.num_classes)
+        valid_dataset = CheXpertDataset_paired(training = False,transform=xforms_val, num_classes=args.num_classes)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
                 
