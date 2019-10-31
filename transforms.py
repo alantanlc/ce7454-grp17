@@ -34,7 +34,7 @@ for j in range(200):
                                transforms.Compose([toPILImage, medianBlur]),
                                transforms.Compose([toPILImage, histEq]),
                                transforms.Compose([normalize, toPILImage]),
-                               transforms.Compose([toPILImage, resize, centerCrop, medianBlur, histEq]),
+                               transforms.Compose([toPILImage, resize, randomCrop, medianBlur, histEq]),
                                transforms.Compose([toPILImage, frameCrop, resize, centerCrop, medianBlur, histEq])]):
         image = sample[0]
         transformed_sample = tsfrm(image)
