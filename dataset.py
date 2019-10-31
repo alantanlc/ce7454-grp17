@@ -16,6 +16,8 @@ import pandas as pd
 random.seed(42)
 st = random.getstate()
 import torchvision.transforms as transforms
+from HistogramEqualize import *
+from MedianBlur import *
 
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
@@ -44,7 +46,10 @@ class CheXpertDataset(Dataset):
         #if test present overrides train/val
         if test != None:
             self.csv = pd.read_csv(test)
-            self.transforms = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
+            self.transforms = transforms.Compose([transforms.Resize(256),
+                                                  transforms.CenterCrop(224),
+                                                  HistogramEqualize(),
+                                                  MedianBlur()])
             self.csv['study'] = [row[3] for row in self.csv.Path.str.split('/')]
             self.csv['patient_no'] = [row[2] for row in self.csv.Path.str.split('/')]
 
@@ -85,7 +90,7 @@ class CheXpertDataset(Dataset):
         
         if self.transforms != None:
             img = self.transforms(img)
-        img = equalize(img)
+        # img = equalize(img)
         img = self.img_tensorify(img)
         # img = self.normalize(img) 
             
@@ -118,7 +123,10 @@ class CheXpertDataset_paired(Dataset):
         #if test present overrides train/val
         if test != None:
             self.csv = pd.read_csv(test)
-            self.transforms = transforms.Compose([transforms.Resize(256), transforms.CenterCrop(224)])
+            self.transforms = transforms.Compose([transforms.Resize(256),
+                                                  transforms.CenterCrop(224),
+                                                  HistogramEqualize(),
+                                                  MedianBlur()])
 
         self.csv['study'] = [row[3] for row in self.csv.Path.str.split('/')]
         self.csv['patient_no'] = [row[2] for row in self.csv.Path.str.split('/')]
@@ -214,7 +222,7 @@ class CheXpertDataset_paired(Dataset):
         img = Image.open(pth)
         if self.transforms != None:
             img = self.transforms(img)
-        img = equalize(img)
+        # img = equalize(img)
         img = self.img_tensorify(img)
         # img = self.normalize(img) 
         return img

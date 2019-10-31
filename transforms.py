@@ -5,12 +5,14 @@ import matplotlib.pyplot as plt
 from dataset import CheXpertDataset
 from HistogramEqualize import *
 from MedianBlur import *
+from FrameCrop import *
 
 # Load datasets
 image_datasets = {x: CheXpertDataset(training=(x == 'train')) for x in ['train', 'val']}
 
 # Individual transforms
 mean, std = 127.8989, 74.69
+frameCrop = FrameCrop(60)
 resize = transforms.Resize(365)
 randomCrop = transforms.RandomCrop(320)
 centerCrop = transforms.CenterCrop(320)
@@ -20,28 +22,33 @@ toTensor = transforms.ToTensor()
 normalize = transforms.Normalize(mean=[mean], std=[std])
 toPILImage = transforms.ToPILImage()
 
-# Apply each of the train transform on sample
+# Apply each of the TRAIN transform on sample
 fig = plt.figure()
-sample = image_datasets['train'][0]
-titles = ['Resize', 'Random Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose']
+titles = ['FrameCrop', 'Resize', 'Random Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose without FrameCrop', 'Compose with FrameCrop']
 
-for i, tsfrm in enumerate([transforms.Compose([toPILImage, resize]),
-                           transforms.Compose([toPILImage, randomCrop]),
-                           transforms.Compose([toPILImage, medianBlur]),
-                           transforms.Compose([toPILImage, histEq]),
-                           transforms.Compose([normalize, toPILImage]),
-                           transforms.Compose([toPILImage, resize, randomCrop, medianBlur, histEq, toTensor, normalize, toPILImage])]):
-    image = sample[0]
-    transformed_sample = tsfrm(image)
+for j in range(200):
+    sample = image_datasets['val'][j]
+    for i, tsfrm in enumerate([transforms.Compose([toPILImage, frameCrop]),
+                               transforms.Compose([toPILImage, resize]),
+                               transforms.Compose([toPILImage, randomCrop]),
+                               transforms.Compose([toPILImage, medianBlur]),
+                               transforms.Compose([toPILImage, histEq]),
+                               transforms.Compose([normalize, toPILImage]),
+                               transforms.Compose([toPILImage, resize, centerCrop, medianBlur, histEq]),
+                               transforms.Compose([toPILImage, frameCrop, resize, centerCrop, medianBlur, histEq])]):
+        image = sample[0]
+        transformed_sample = tsfrm(image)
 
-    ax = plt.subplot(2, 3, i+1)
-    plt.tight_layout()
-    ax.set_title(titles[i])
-    plt.imshow(transformed_sample, cmap='gray')
+        ax = plt.subplot(3, 3, i+1)
+        plt.tight_layout()
+        ax.set_title(titles[i])
+        plt.imshow(transformed_sample, cmap='gray')
+    plt.get_current_fig_manager().window.showMaximized()
+    plt.show()
 
-# Apply each of the valid transform on sample
+# Apply each of the VALID transform on sample
 fig = plt.figure()
-sample = image_datasets['train'][1]
+sample = image_datasets['val'][0]
 titles = ['Resize', 'Center Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose']
 for i, tsfrm in enumerate([transforms.Compose([toPILImage, resize]),
                            transforms.Compose([toPILImage, centerCrop]),

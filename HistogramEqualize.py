@@ -1,9 +1,7 @@
-import cv2
-import numpy as np
-import PIL
+from PIL.ImageOps import equalize
 
-class HistogramEqualize(object):
+class HistogramEqualize:
     """ Perform histogram equalization to improve contrast of the image."""
 
     def __call__(self, sample):
-        return PIL.Image.fromarray(cv2.equalizeHist(np.asarray(sample)))
+        return equalize(sample)
