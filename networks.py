@@ -112,16 +112,16 @@ class masked_duo_model(nn.Module):
         
 class anytime_prediction_model(nn.Module):
 
-    def __init__(self, num_classes=5):
+    def __init__(self, num_classes=5, intermediate_size=4):
         super(anytime_prediction_model, self).__init__()
         self.prelim_layers = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),*(list(models.resnet18().children())[1:4]))
         self.layers = nn.ModuleList(models.resnet18().children())[4:-1]
-        self.avgpool = nn.AdaptiveAvgPool2d((4,4))
-        self.linear1 = nn.Linear(64*4*4, 4)
-        self.linear2 = nn.Linear(128*4*4, 4)
-        self.linear3 = nn.Linear(256*4*4, 4)
-        self.linear4 = nn.Linear(512*4*4, 4)
-        self.classifier = nn.Linear(16, num_classes)
+        self.avgpool = nn.AdaptiveAvgPool2d((intermediate_size,intermediate_size))
+        self.linear1 = nn.Linear(64*intermediate_size*intermediate_size, intermediate_size)
+        self.linear2 = nn.Linear(128*intermediate_size*intermediate_size, intermediate_size)
+        self.linear3 = nn.Linear(256*intermediate_size*intermediate_size, intermediate_size)
+        self.linear4 = nn.Linear(512*intermediate_size*intermediate_size, intermediate_size)
+        self.classifier = nn.Linear(4*intermediate_size, num_classes)
         
     def forward(self, x):
         x = self.prelim_layers(x)

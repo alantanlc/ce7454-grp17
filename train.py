@@ -46,6 +46,7 @@ parser.add_argument('--finetune', action='store_true', help='use a pretrained ch
 
 parser.add_argument('--view', type=str, default='both', help='dataset view - frontal, lateral, both(default)')
 parser.add_argument('--num_classes', type=int, default=5, help='number of classes - default:5')
+parser.add_argument('--intermediate_size', type=int, default=5, help='anytime_prediction intermediate size')
 
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
@@ -182,9 +183,9 @@ def main(args):
             param.requires_grad = False
         model = masked_duo_model(frontal_model, lateral_model)
     elif args.model == 'anytime_prediction_model':
-        model = anytime_prediction_model(num_classes=args.num_classes)
+        model = anytime_prediction_model(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
     elif args.model == 'final_prediction_model':
-        model1_path = 'experiments/resnet18_both_5/model_best.pth.tar'
+        model1_path = 'experiments/resnet18_both_5_equalized/model_best.pth.tar'
         model2_path = 'experiments/resnet152_both_5/model_best.pth.tar'
         model3_path = 'experiments/densenet121_both_5/model_best.pth.tar'
         model1 = modified_resnet18(num_classes=args.num_classes)
