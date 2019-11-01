@@ -3,6 +3,7 @@ import warnings
 warnings.simplefilter("ignore")
 import torch.optim
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.functional import sigmoid
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
@@ -47,6 +48,10 @@ parser.add_argument('--finetune', action='store_true', help='use a pretrained ch
 parser.add_argument('--view', type=str, default='both', help='dataset view - frontal, lateral, both(default)')
 parser.add_argument('--num_classes', type=int, default=5, help='number of classes - default:5')
 parser.add_argument('--intermediate_size', type=int, default=5, help='anytime_prediction intermediate size')
+parser.add_argument('--use_weighted_bce', action='store_true', help='weighted bceloss')
+parser.add_argument('--unmentioned_w', type=float, default=0.3, help='unmentioned_w')
+parser.add_argument('--uncertainty_w', type=float, default=0.5, help='uncertainty_w')
+
 
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
@@ -228,6 +233,9 @@ def main(args):
     if args.model == 'masked_duo_model' or args.model == 'masked_duo_model_freeze':
         train_dataset = CheXpertDataset_paired(training = True,transform=xforms_train, num_classes=args.num_classes)
         valid_dataset = CheXpertDataset_paired(training = False,transform=xforms_val, num_classes=args.num_classes)
+    if args.use_weighted_bce:
+        train_dataset = CheXpertDataset_weights(training = True,transform=xforms_train, num_classes=args.num_classes)
+        valid_dataset = CheXpertDataset_weights(training = False,transform=xforms_val, num_classes=args.num_classes)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
                 
@@ -313,8 +321,14 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             target = target.cuda()
             input = input.cuda()
         # compute output
-        output = model(input)    
-        loss = criterion(output, target)
+        output = model(input)
+        if args.use_weighted_bce:
+            weights = target.clone()
+            target[target==args.unmentioned_w] = 0.
+            target[target==args.unmentioned_w] = 1.0
+            loss = F.binary_cross_entropy_with_logits(output, target, weight=weights)
+        else:    
+            loss = criterion(output, target)
         running_loss += loss.item()
         # compute gradient and do SGD step
         optimizer.zero_grad()

@@ -110,7 +110,7 @@ class masked_duo_model(nn.Module):
         
         
         
-class anytime_prediction_model(nn.Module):
+class anytime_prediction_model_resnet18(nn.Module):
 
     def __init__(self, num_classes=5, intermediate_size=4):
         super(anytime_prediction_model, self).__init__()

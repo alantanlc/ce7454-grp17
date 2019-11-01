@@ -227,4 +227,84 @@ class CheXpertDataset_paired(Dataset):
         # img = self.normalize(img) 
         return img
         
+
+class CheXpertDataset_weights(Dataset):
+    def __init__(self, training=True, unmentioned_w=0.4, uncertainty_w=0.5, num_classes=5, transform = None, test=None):
+        assert((num_classes==14) or (num_classes==5))
+        self.num_classes= num_classes
+        self.training = training
+        self.transforms = transform
+        self.unmentioned_w = unmentioned_w
+        self.uncertainty_w = uncertainty_w
+        if self.training:
+            self.csv = pd.read_csv('data/CheXpert-v1.0-small/train.csv')
+        else:
+            self.csv = pd.read_csv('data/CheXpert-v1.0-small/valid.csv')
+    
+        #if test present overrides train/val
+        if test != None:
+            self.csv = pd.read_csv(test)
+            self.transforms = transforms.Compose([transforms.Resize(256),
+                                                  transforms.CenterCrop(224),
+                                                  HistogramEqualize(),
+                                                  MedianBlur()])
+
+        self.csv['study'] = [row[3] for row in self.csv.Path.str.split('/')]
+        self.csv['patient_no'] = [row[2] for row in self.csv.Path.str.split('/')]
+        self.csv['patient_study'] = [f'{row[2]}_{row[3]}' for row in self.csv.Path.str.split('/')]
+                
         
+        #change no_finding to 0 if any pathology present
+        # pathologies_present_idx = (self.csv.iloc[:,6:18]==1).any(1).index
+        #change all pathology to 0 if no_finding is 0
+        # self.csv.iloc[pathologies_present_idx, 5] = 0.0 
+        # no_finding_idx = (self.csv.loc[:,'No Finding'] == 1).index
+        # self.csv.iloc[no_finding_idx,6:18] = 0.0
+        self.csv= self.csv.fillna(self.unmentioned_w)
+        self.csv= self.csv.replace(-1.0,self.uncertainty_w)
+        self.labels_cols = class_names
+        self.img_tensorify = ToTensor()
+        self.normalize = Normalize(mean=[127],std=[74.69])
+        
+        
+        if test == None:
+            print('number of samples in dataset', self.csv.shape[0], 'Training:', self.training)
+            eda = ''
+            for name in class_names:
+                eda += f'{name}: '
+                eda += str(self.csv[name].value_counts().to_dict())
+                eda += '\n'
+            print(eda)
+
+    def __len__(self):
+        return self.csv.shape[0]
+        # return 100
+
+    def __getitem__(self, index):
+        
+        pth = os.path.join('data',self.csv.loc[index, 'Path'])
+        labels = self.csv.loc[index, self.labels_cols]
+        if self.num_classes==5:
+            labels = labels[[8,2,6,5,10]]
+
+        img = Image.open(pth)
+        
+        if self.transforms != None:
+            img = self.transforms(img)
+        # img = equalize(img)
+        img = self.img_tensorify(img)
+        # img = self.normalize(img) 
+            
+        return img, torch.Tensor(labels), 
+
+    def load_img(self, index):
+        pth = os.path.join('data',self.csv.loc[index, 'Path'])
+        img = Image.open(pth)
+        if self.transforms != None:
+            img = self.transforms(img)
+        # img = equalize(img)
+        img = self.img_tensorify(img)
+        # img = self.normalize(img) 
+        return img
+        
+            
