@@ -4,34 +4,44 @@ from PIL import Image
 class FrameCrop:
     """ Perform frame crop to remove black borders """
 
-    def __init__(self, threshold=0):
-        assert isinstance(threshold, (int, float)) and threshold >= 0
-        self.threshold = threshold
+    def __init__(self, mean=60, std=20):
+        assert isinstance(mean, (int, float)) and mean >= 0
+        assert  isinstance(std, (int, float)) and std >= 0
+        self.threshold = mean
+        self.std = std
 
     def __call__(self, sample):
         sample = np.asarray(sample)
 
         top, bottom, left, right = 0, sample.shape[0]-1, 0, sample.shape[1]-1
-        topThres, bottomThres, leftThres, rightThres = 0, 0, 0, 0
+        topMean, bottomMean, leftMean, rightMean = 0, 0, 0, 0
+        topStd, bottomStd, leftStd, rightStd = 0, 0, 0, 0
 
         # Find top
-        while topThres < self.threshold:
-            topThres = np.mean(sample[top, :])
+        while topMean < self.threshold or topStd < self.std:
+            topMean = np.mean(sample[top, :])
+            topStd = np.std(sample[top, :])
             top += 1
 
         # Find bottom
-        while bottomThres < self.threshold:
-            bottomThres = np.mean(sample[bottom, :])
+        while bottomMean < self.threshold or bottomStd < self.std:
+            bottomMean = np.mean(sample[bottom, :])
+            bottomStd = np.std(sample[bottom, :])
             bottom -= 1
 
         # Find left
-        while leftThres < self.threshold:
-            leftThres = np.mean(sample[:, left])
+        while leftMean < self.threshold or leftStd < self.std:
+            leftMean = np.mean(sample[:, left])
+            leftStd = np.std(sample[:, left])
             left += 1
 
         # Find right
-        while rightThres < self.threshold:
-            rightThres = np.mean(sample[:, right])
+        while rightMean < self.threshold or rightStd < self.std:
+            rightMean = np.mean(sample[:, right])
+            rightStd = np.std(sample[:, right])
             right -= 1
+
+        # print(topStd, bottomStd, leftStd, rightStd)
+        # print(top, sample.shape[0]-bottom, left, sample.shape[1]-right)
 
         return Image.fromarray(sample[top:bottom, left:right])

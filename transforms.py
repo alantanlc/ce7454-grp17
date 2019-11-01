@@ -22,7 +22,7 @@ toTensor = transforms.ToTensor()
 normalize = transforms.Normalize(mean=[mean], std=[std])
 toPILImage = transforms.ToPILImage()
 
-# Apply each of the TRAIN transform on sample
+# Apply each of the transform on sample
 fig = plt.figure()
 titles = ['FrameCrop', 'Resize', 'Random Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose without FrameCrop', 'Compose with FrameCrop']
 
@@ -34,8 +34,8 @@ for j in range(200):
                                transforms.Compose([toPILImage, medianBlur]),
                                transforms.Compose([toPILImage, histEq]),
                                transforms.Compose([normalize, toPILImage]),
-                               transforms.Compose([toPILImage, resize, randomCrop, medianBlur, histEq]),
-                               transforms.Compose([toPILImage, frameCrop, resize, centerCrop, medianBlur, histEq])]):
+                               transforms.Compose([toPILImage, resize, centerCrop, medianBlur, histEq]),
+                               transforms.Compose([toPILImage, resize, frameCrop, centerCrop, medianBlur, histEq])]):
         image = sample[0]
         transformed_sample = tsfrm(image)
 
@@ -45,24 +45,5 @@ for j in range(200):
         plt.imshow(transformed_sample, cmap='gray')
     plt.get_current_fig_manager().window.showMaximized()
     plt.show()
-
-# Apply each of the VALID transform on sample
-fig = plt.figure()
-sample = image_datasets['val'][0]
-titles = ['Resize', 'Center Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose']
-for i, tsfrm in enumerate([transforms.Compose([toPILImage, resize]),
-                           transforms.Compose([toPILImage, centerCrop]),
-                           transforms.Compose([toPILImage, medianBlur]),
-                           transforms.Compose([toPILImage, histEq]),
-                           transforms.Compose([normalize, toPILImage]),
-                           transforms.Compose([toPILImage, resize, centerCrop, medianBlur, histEq, toTensor, normalize, toPILImage])]):
-    image = sample[0]
-    transformed_sample = tsfrm(image)
-
-    ax = plt.subplot(2, 3, i+1)
-    plt.tight_layout()
-    ax.set_title(titles[i])
-    plt.imshow(transformed_sample, cmap='gray')
-plt.show()
 
 print('End of program')
