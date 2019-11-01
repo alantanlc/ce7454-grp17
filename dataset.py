@@ -25,7 +25,27 @@ class_names = ['No Finding',
        'Pneumothorax', 'Pleural Effusion', 'Pleural Other', 'Fracture',
        'Support Devices']
 # mean=127.898, std=74.69748171138374
+def load_img(self, index):
+    pth = os.path.join('data',self.csv.loc[index, 'Path'])
+    img = Image.open(pth)
+    if self.transforms != None:
+        img = self.transforms(img)
+    # img = equalize(img)
+    img = self.img_tensorify(img)
+    # img = self.normalize(img) 
+    return img
 
+def cal_mean_std(self):
+    #will take quite a while
+    pths = self.csv.loc[:,'Path']
+    pixels = np.array([])
+    for pth in pths:
+        pixels = np.concatenate((pixels, np.array(Image.open(os.path.join('data',pth))).reshape(-1)))
+        
+    mean = pixels.mean()
+    std = pixels.std()
+    return mean, std
+        
 class CheXpertDataset(Dataset):
     def __init__(self, training=True, imputation=1.0, num_classes=14, view='both', transform = None, test=None):
         assert((num_classes==14) or (num_classes==5))
@@ -96,16 +116,6 @@ class CheXpertDataset(Dataset):
             
         return img, torch.Tensor(labels)
 
-    def cal_mean_std(self):
-        #will take quite a while
-        pths = self.csv.loc[:,'Path']
-        pixels = np.array([])
-        for pth in pths:
-            pixels = np.concatenate((pixels, np.array(Image.open(os.path.join('data',pth))).reshape(-1)))
-            
-        mean = pixels.mean()
-        std = pixels.std()
-        return mean, std
 
 
 class CheXpertDataset_paired(Dataset):
@@ -167,7 +177,7 @@ class CheXpertDataset_paired(Dataset):
         if self.num_classes==5:
             labels = labels[[8,2,6,5,10]]
         
-        img = self.load_img(index)
+        img = load_img(index)
         
         _,h,w = img.shape
         if self.csv.loc[index, 'Frontal/Lateral'] == 'Frontal':
@@ -192,9 +202,9 @@ class CheXpertDataset_paired(Dataset):
             #if random is different view, load it
             else:
                 if frontal == 1:
-                    lateral_img = self.load_img(ran)
+                    lateral_img = load_img(ran)
                 elif lateral == 1:
-                    frontal_img = self.load_img(ran)
+                    frontal_img = load_img(ran)
         #if no other view available
         else:
             if frontal ==1:
@@ -206,26 +216,7 @@ class CheXpertDataset_paired(Dataset):
         
         return torch.stack([frontal_img, lateral_img]), torch.Tensor(labels)
 
-    def cal_mean_std(self):
-        #will take quite a while
-        pths = self.csv.loc[:,'Path']
-        pixels = np.array([])
-        for pth in pths:
-            pixels = np.concatenate((pixels, np.array(Image.open(os.path.join('data',pth))).reshape(-1)))
-            
-        mean = pixels.mean()
-        std = pixels.std()
-        return mean, std
 
-    def load_img(self, index):
-        pth = os.path.join('data',self.csv.loc[index, 'Path'])
-        img = Image.open(pth)
-        if self.transforms != None:
-            img = self.transforms(img)
-        # img = equalize(img)
-        img = self.img_tensorify(img)
-        # img = self.normalize(img) 
-        return img
         
 
 class CheXpertDataset_weights(Dataset):
@@ -278,7 +269,7 @@ class CheXpertDataset_weights(Dataset):
 
     def __len__(self):
         return self.csv.shape[0]
-        # return 100
+        # return 200
 
     def __getitem__(self, index):
         
@@ -297,14 +288,6 @@ class CheXpertDataset_weights(Dataset):
             
         return img, torch.Tensor(labels), 
 
-    def load_img(self, index):
-        pth = os.path.join('data',self.csv.loc[index, 'Path'])
-        img = Image.open(pth)
-        if self.transforms != None:
-            img = self.transforms(img)
-        # img = equalize(img)
-        img = self.img_tensorify(img)
-        # img = self.normalize(img) 
-        return img
+
         
             

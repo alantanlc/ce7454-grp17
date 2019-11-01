@@ -234,8 +234,8 @@ def main(args):
         train_dataset = CheXpertDataset_paired(training = True,transform=xforms_train, num_classes=args.num_classes)
         valid_dataset = CheXpertDataset_paired(training = False,transform=xforms_val, num_classes=args.num_classes)
     if args.use_weighted_bce:
-        train_dataset = CheXpertDataset_weights(training = True,transform=xforms_train, num_classes=args.num_classes)
-        valid_dataset = CheXpertDataset_weights(training = False,transform=xforms_val, num_classes=args.num_classes)
+        train_dataset = CheXpertDataset_weights(training = True,transform=xforms_train, num_classes=args.num_classes,unmentioned_w=args.unmentioned_w, uncertainty_w=args.uncertainty_w)
+        valid_dataset = CheXpertDataset_weights(training = False,transform=xforms_val, num_classes=args.num_classes,unmentioned_w=args.unmentioned_w, uncertainty_w=args.uncertainty_w)
     optimizer = torch.optim.Adam(model.parameters(), args.lr)
 
                 
@@ -325,7 +325,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
         if args.use_weighted_bce:
             weights = target.clone()
             target[target==args.unmentioned_w] = 0.
-            target[target==args.unmentioned_w] = 1.0
+            target[target==args.uncertainty_w] = 1.0
             loss = F.binary_cross_entropy_with_logits(output, target, weight=weights)
         else:    
             loss = criterion(output, target)
@@ -352,7 +352,6 @@ def train(train_loader, model, criterion, optimizer, epoch, args):
             all_labels = target.detach().cpu().numpy()
         else:    
             all_labels = np.concatenate((all_labels, target.detach().cpu().numpy()), axis=0)
-        
 
     TT = time.time() - stime
     running_loss =  running_loss/(i+1)
@@ -402,7 +401,13 @@ def validate(val_loader, model, criterion, args, epoch):
                 target = target.cuda()
                 input = input.cuda()
             output = model(input)
-            loss = criterion(output, target)
+            if args.use_weighted_bce:
+                weights = target.clone()
+                target[target==args.unmentioned_w] = 0.
+                target[target==args.uncertainty_w] = 1.0
+                loss = F.binary_cross_entropy_with_logits(output, target, weight=weights)
+            else:    
+                loss = criterion(output, target)
             running_loss += loss.item()
             individual_correct, batch_correct, num_batch =cal_multilabel_accuracy(output,target)
             correct += individual_correct
