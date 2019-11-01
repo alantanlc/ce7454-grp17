@@ -1,0 +1,20 @@
+----------------- Options ---------------
+      augment_probability: 1.0                           
+                       bs: 640                           	[default: 16]
+               checkpoint: None                          
+                    epoch: 20                            	[default: 5]
+                 expr_dir: experiments/kdSN20e_resnet152_zm	[default: None]
+                 finetune: False                         
+               input_size: 320                           
+                  is_cuda: True                          	[default: None]
+                       lr: 0.0001                        
+                    model: resnet152                     	[default: resnet18]
+                 momentum: 0.9                           
+                     name: kdSN20e_resnet152_zm          	[default: None]
+              num_classes: 5                             	[default: 14]
+           print_interval: 500                           
+                 save_dir: experiments/                  
+       teacher_checkpoint: /mnt/lustre/tangzhejun/CE/Datascience/experiments/resnet152_20e_class5/checkpoint.pth.tar	[default: None]
+                     view: both                          
+             weight_decay: 0.0005                        
+----------------- End -------------------
