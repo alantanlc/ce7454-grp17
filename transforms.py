@@ -12,7 +12,7 @@ image_datasets = {x: CheXpertDataset(training=(x == 'train')) for x in ['train',
 
 # Individual transforms
 mean, std = 127.8989, 74.69
-frameCrop = FrameCrop(60)
+frameCrop = FrameCrop(60, 20)
 resize = transforms.Resize(365)
 randomCrop = transforms.RandomCrop(320)
 centerCrop = transforms.CenterCrop(320)
@@ -27,7 +27,7 @@ fig = plt.figure()
 titles = ['FrameCrop', 'Resize', 'Random Crop', 'Median Blur', 'Histogram Equalization', 'Normalize', 'Compose without FrameCrop', 'Compose with FrameCrop']
 
 for j in range(200):
-    sample = image_datasets['val'][j]
+    sample = image_datasets['train'][j]
     for i, tsfrm in enumerate([transforms.Compose([toPILImage, frameCrop]),
                                transforms.Compose([toPILImage, resize]),
                                transforms.Compose([toPILImage, randomCrop]),
@@ -35,7 +35,7 @@ for j in range(200):
                                transforms.Compose([toPILImage, histEq]),
                                transforms.Compose([normalize, toPILImage]),
                                transforms.Compose([toPILImage, resize, centerCrop, medianBlur, histEq]),
-                               transforms.Compose([toPILImage, resize, frameCrop, centerCrop, medianBlur, histEq])]):
+                               transforms.Compose([toPILImage, frameCrop, resize, centerCrop, medianBlur, histEq])]):
         image = sample[0]
         transformed_sample = tsfrm(image)
 
