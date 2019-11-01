@@ -213,10 +213,12 @@ def main(args):
     criterion = nn.BCEWithLogitsLoss()
     
     # mean=127.898, std=74.69748171138374
-    xforms_train = transforms.Compose([transforms.Resize(365),
+    xforms_train = transforms.Compose([FrameCrop(60, 20),
+                                       transforms.Resize(365),
                                        transforms.RandomCrop(args.input_size),
                                        HistogramEqualize()])
-    xforms_val = transforms.Compose([transforms.Resize(365),
+    xforms_val = transforms.Compose([FrameCrop(60, 20),
+                                     transforms.Resize(365),
                                      transforms.CenterCrop(args.input_size),
                                      HistogramEqualize()])
     
