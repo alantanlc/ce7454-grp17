@@ -3,8 +3,9 @@ from skimage import io
 import matplotlib.pyplot as plt
 from FrameCrop import *
 
-df = pd.read_csv('poorlyCroppedFiles.csv')
-# df = pd.read_csv('wellCroppedFiles.csv')
+# df = pd.read_csv('goodCropFiles.csv')
+# df = pd.read_csv('averageCropFiles.csv')
+df = pd.read_csv('badCropFiles.csv')
 files = df.iloc[:, 0]
 frameCrop = FrameCrop(60, 20)
 

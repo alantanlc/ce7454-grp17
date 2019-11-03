@@ -5,42 +5,50 @@ from skimage import io
 import numpy as np
 import pandas as pd
 
-def isPoorlyCropped(sample, mean=60, std=20, lengthThreshold=50):
+def getCropQuality(sample, mean=60, std=20, averageThreshold=30, badThreshold=60):
     top, bottom, left, right = 0, sample.shape[0] - 1, 0, sample.shape[1] - 1
     topMean, bottomMean, leftMean, rightMean = 0, 0, 0, 0
     topStd, bottomStd, leftStd, rightStd = 0, 0, 0, 0
 
     # Find top
-    while topMean < mean or topStd < std:
+    while topMean < mean or topStd < std and topMean < 100:
         topMean = np.mean(sample[top, :])
         topStd = np.std(sample[top, :])
         top += 1
-        if top >= lengthThreshold:
-            return 1
+    if top >= badThreshold:
+        return 2
+    elif top >= averageThreshold:
+        return 1
 
     # Find bottom
-    while bottomMean < mean or bottomStd < std:
+    while bottomMean < mean or bottomStd < std and bottomMean < 100:
         bottomMean = np.mean(sample[bottom, :])
         bottomStd = np.std(sample[bottom, :])
         bottom -= 1
-        if sample.shape[0] - bottom >= lengthThreshold:
-            return 1
+    if sample.shape[0] - bottom >= badThreshold:
+        return 2
+    elif sample.shape[0] - bottom >= averageThreshold:
+        return 1
 
     # Find left
-    while leftMean < mean or leftStd < std:
+    while leftMean < mean or leftStd < std and leftMean < 100:
         leftMean = np.mean(sample[:, left])
-        leftStd = np.std(sample[:, std])
+        leftStd = np.std(sample[:, left])
         left += 1
-        if left >= lengthThreshold:
-            return 1
+    if left >= badThreshold:
+        return 2
+    elif left >= averageThreshold:
+        return 1
 
     # Find right
-    while rightMean < mean or rightStd < std:
+    while rightMean < mean or rightStd < std and rightMean < 100:
         rightMean = np.mean(sample[:, right])
         rightStd = np.std(sample[:, right])
         right -= 1
-        if sample.shape[1] - right >= lengthThreshold:
-            return 1
+    if sample.shape[1] - right >= badThreshold:
+        return 2
+    elif sample.shape[1] - right >= averageThreshold:
+        return 1
 
     return 0
 
@@ -48,33 +56,38 @@ train = CheXpertDataset()
 labels = train.labels_cols
 
 # Distribution of well-cropped and poorly-cropped images (This takes about 30 mins to complete)
-counts = [0, 0]
-poorlyCroppedFiles = []
-wellCroppedFiles = []
+counts = [0, 0, 0]
+goodCropFiles = []
+averageCropFiles = []
+badCropFiles = []
 for i in range(len(train)):
     file = train.csv.iloc[i, 0]
     sample = io.imread('data/' + file)
-    idx = isPoorlyCropped(sample)
+    idx = getCropQuality(sample)
     counts[idx] += 1
 
-    if idx == 1:
-        poorlyCroppedFiles.append(file)
+    if idx == 0:
+        goodCropFiles.append(file)
+    elif idx == 1:
+        averageCropFiles.append(file)
     else:
-        wellCroppedFiles.append(file)
+        badCropFiles.append(file)
 
 # Write to csv
-df = pd.DataFrame(poorlyCroppedFiles, columns=["Path"])
-df.to_csv('poorlyCroppedFiles.csv', index=False)
-df = pd.DataFrame(wellCroppedFiles, columns=["Path"])
-df.to_csv('wellCroppedFiles.csv', index=False)
+df = pd.DataFrame(goodCropFiles, columns=["Path"])
+df.to_csv('goodCropFiles.csv', index=False)
+df = pd.DataFrame(averageCropFiles, columns=["Path"])
+df.to_csv('averageCropFiles.csv', index=False)
+df = pd.DataFrame(badCropFiles, columns=["Path"])
+df.to_csv('badCropFiles.csv', index=False)
 
 # Plot figure
 plt.figure(figsize=(12, 6))
-sns.barplot(['Well-cropped', 'Poorly-cropped'], counts, alpha = 0.9)
+sns.barplot(['Good', 'Average', 'Bad'], counts, alpha = 0.9)
 plt.xticks(rotation = 'vertical')
-plt.xlabel('Crop', fontsize = 12)
+plt.xlabel('Crop Quality', fontsize = 12)
 plt.ylabel('Counts', fontsize = 12)
-plt.savefig("well_poorly_cropped.png")
+plt.savefig("crop_quality.png")
 
 # Distribution of frontal and lateral images
 frontal_lateral_counts = train.csv.iloc[:, 3].value_counts()
