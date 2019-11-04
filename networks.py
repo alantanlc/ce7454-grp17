@@ -209,11 +209,8 @@ class anytime_prediction_model_densenet121(nn.Module):
         for i in range(len(self.features)):
             x = self.features[i](x)
             intermediate_state = self.avgpool(x)
-            print(x.shape)
             intermediate_state = torch.flatten(intermediate_state,1)
-            print(intermediate_state.shape)
             intermediate_state = self.intermediate_ffn[i](intermediate_state)
-            print(intermediate_state.shape)
             intermediate_states.append(intermediate_state)
 
         y = torch.cat(intermediate_states,1)
