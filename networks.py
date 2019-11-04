@@ -3,7 +3,8 @@ import torch.nn as nn
 import torchvision.models as models
 import torch.nn.functional as F
 from torchvision.models.resnet import BasicBlock
-
+from collections import OrderedDict
+from torchvision.models.densenet import _DenseBlock, _Transition
 
 def modified_resnet18(num_classes=14):
     model = models.resnet18()
@@ -113,7 +114,7 @@ class masked_duo_model(nn.Module):
 class anytime_prediction_model_resnet18(nn.Module):
 
     def __init__(self, num_classes=5, intermediate_size=4):
-        super(anytime_prediction_model, self).__init__()
+        super(anytime_prediction_model_resnet18, self).__init__()
         self.prelim_layers = nn.Sequential(nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3, bias=False),*(list(models.resnet18().children())[1:4]))
         self.layers = nn.ModuleList(models.resnet18().children())[4:-1]
         self.avgpool = nn.AdaptiveAvgPool2d((intermediate_size,intermediate_size))
@@ -151,7 +152,75 @@ class anytime_prediction_model_resnet18(nn.Module):
         y = self.classifier(y)
         
         return y
+        
+class anytime_prediction_model_densenet121(nn.Module):
 
+    def __init__(self, num_classes=5, intermediate_size=4):
+        super(anytime_prediction_model_densenet121, self).__init__()
+        self.intermediate_size=intermediate_size
+        self.num_classes=num_classes
+        #densenet121 config
+        self.block_config=(6, 12, 24, 16)
+        self.num_init_features = 64
+        self.growth_rate=32
+        self.bn_size=4
+        self.drop_rate=0
+
+
+        self.prelim_features = nn.Sequential(OrderedDict([
+            ('conv0', nn.Conv2d(1, self.num_init_features, kernel_size=7, stride=2,
+                                padding=3, bias=False)),
+            ('norm0', nn.BatchNorm2d(self.num_init_features)),
+            ('relu0', nn.ReLU(inplace=True)),
+            ('pool0', nn.MaxPool2d(kernel_size=3, stride=2, padding=1)),
+        ]))
+        
+        self.features = nn.ModuleList([])
+        self.intermediate_ffn = nn.ModuleList([])        
+        num_features = self.num_init_features
+
+        for i, num_layers in enumerate(self.block_config):
+            tmp = nn.Sequential(OrderedDict([]))
+            block = _DenseBlock(
+                num_layers=num_layers,
+                num_input_features=num_features,
+                bn_size=self.bn_size,
+                growth_rate=self.growth_rate,
+                drop_rate=self.drop_rate,
+                memory_efficient=False
+            )
+            tmp.add_module('denseblock%d' % (i + 1), block)
+            num_features = num_features + num_layers * self.growth_rate
+            if i != len(self.block_config) - 1:
+                trans = _Transition(num_input_features=num_features,
+                                    num_output_features=num_features // 2)
+                tmp.add_module('transition%d' % (i + 1), trans)
+                num_features = num_features // 2
+            self.features.append(tmp)
+            self.intermediate_ffn.append(nn.Linear(num_features* (self.intermediate_size**2) ,self.intermediate_size))
+        
+        self.avgpool = nn.AdaptiveAvgPool2d((intermediate_size,intermediate_size))
+        self.classifier = nn.Linear(len(self.block_config) * (self.intermediate_size),self.num_classes)
+        
+  
+    def forward(self, x):
+        x = self.prelim_features(x)
+        intermediate_states= []
+        for i in range(len(self.features)):
+            x = self.features[i](x)
+            intermediate_state = self.avgpool(x)
+            print(x.shape)
+            intermediate_state = torch.flatten(intermediate_state,1)
+            print(intermediate_state.shape)
+            intermediate_state = self.intermediate_ffn[i](intermediate_state)
+            print(intermediate_state.shape)
+            intermediate_states.append(intermediate_state)
+
+        y = torch.cat(intermediate_states,1)
+        y = self.classifier(y)
+        
+        return y
+        
 class final_prediction_model(nn.Module):
 
     def __init__(self, model1=None, model2=None, model3=None, num_classes=5):

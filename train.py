@@ -187,8 +187,10 @@ def main(args):
         for param in lateral_model.parameters():
             param.requires_grad = False
         model = masked_duo_model(frontal_model, lateral_model)
-    elif args.model == 'anytime_prediction_model':
-        model = anytime_prediction_model(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
+    elif args.model == 'anytime_prediction_model_resnet18':
+        model = anytime_prediction_model_resnet18(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
+    elif args.model == 'anytime_prediction_model_densenet121':
+        model = anytime_prediction_model_densenet121(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
     elif args.model == 'final_prediction_model':
         model1_path = 'experiments/resnet18_both_5_equalized/model_best.pth.tar'
         model2_path = 'experiments/resnet152_both_5/model_best.pth.tar'
