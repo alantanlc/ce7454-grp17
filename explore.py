@@ -53,67 +53,90 @@ def getCropQuality(sample, mean=60, std=20, averageThreshold=30, badThreshold=60
     return 0
 
 train = CheXpertDataset()
-labels = train.labels_cols
+labels = ['Atelectasis', 'Cardiomegaly', 'Consolidation', 'Edema', 'Pleural Effusion']
 
-# Distribution of well-cropped and poorly-cropped images (This takes about 30 mins to complete)
-counts = [0, 0, 0]
-goodCropFiles = []
-averageCropFiles = []
-badCropFiles = []
-for i in range(len(train)):
-    file = train.csv.iloc[i, 0]
-    sample = io.imread('data/' + file)
-    idx = getCropQuality(sample)
-    counts[idx] += 1
-
-    if idx == 0:
-        goodCropFiles.append(file)
-    elif idx == 1:
-        averageCropFiles.append(file)
-    else:
-        badCropFiles.append(file)
-
-# Write to csv
-df = pd.DataFrame(goodCropFiles, columns=["Path"])
-df.to_csv('goodCropFiles.csv', index=False)
-df = pd.DataFrame(averageCropFiles, columns=["Path"])
-df.to_csv('averageCropFiles.csv', index=False)
-df = pd.DataFrame(badCropFiles, columns=["Path"])
-df.to_csv('badCropFiles.csv', index=False)
-
-# Plot figure
-plt.figure(figsize=(12, 6))
-sns.barplot(['Good', 'Average', 'Bad'], counts, alpha = 0.9)
-plt.xticks(rotation = 'vertical')
-plt.xlabel('Crop Quality', fontsize = 12)
-plt.ylabel('Counts', fontsize = 12)
-plt.savefig("crop_quality.png")
+# Number of images under each label
+colSums = train.csv.loc[:, labels].sum().values
+ax = sns.barplot(labels, colSums)
+plt.title("Images in each category",)
+plt.xlabel('Pathology')
+plt.ylabel('Number of images')
+# adding the text labels
+rects = ax.patches
+for rect, label in zip(rects, colSums):
+    height = rect.get_height()
+    ax.text(rect.get_x() + rect.get_width()/2, height+5, label, ha='center', va='bottom')
+plt.show()
 
 # Distribution of frontal and lateral images
 frontal_lateral_counts = train.csv.iloc[:, 3].value_counts()
-plt.figure(figsize = (12,6))
-sns.barplot(frontal_lateral_counts.index, frontal_lateral_counts.values, alpha = 0.9)
-plt.xticks(rotation = 'vertical')
-plt.xlabel('Fracture labels', fontsize = 12)
-plt.ylabel('Counts', fontsize = 12)
+plt.figure()
+ax = sns.barplot(frontal_lateral_counts.index, frontal_lateral_counts.values)
+plt.title('Images in each view')
+plt.xlabel('Image View')
+plt.ylabel('Number of images')
+# adding the text labels
+rects = ax.patches
+label_values = frontal_lateral_counts.values
+for rect, label in zip(rects, label_values):
+    height = rect.get_height()
+    ax.text(rect.get_x() + rect.get_width()/2, height+5, label, ha='center', va='bottom')
+plt.show()
 
-# Distribution of target variable
-label_counts = []
-plt.figure(figsize = (12,6))
-for label in labels:
-    count = train.csv.loc[:, label].value_counts().values[0]
-    label_counts.append(count)
-sns.barplot(labels, label_counts, alpha = 0.9)
-plt.xticks(rotation = 'vertical')
-plt.xlabel('Classes', fontsize=10)
-plt.ylabel('Counts', fontsize=10)
+# Number of comments having multiple labels
+rowSums = train.csv.loc[:, labels].sum(axis=1)
+multiLabel_counts = rowSums.value_counts()
+plt.figure()
+ax = sns.barplot(multiLabel_counts.index, multiLabel_counts.values)
+plt.title("Images having multiple labels")
+plt.xlabel("Number of labels")
+plt.ylabel("Number of images")
+# adding the text labels
+rects = ax.patches
+label_values = multiLabel_counts.values
+for rect, label in zip(rects, label_values):
+    height = rect.get_height()
+    ax.text(rect.get_x() + rect.get_width()/2, height+5, label, ha='center', va='bottom')
+plt.show()
 
 # Distribution of the variable 'age'
-ax = plt.figure(figsize=(30, 8))
-sns.countplot(train.csv.Age)
-axis_font = {'fontname': 'Arial', 'size':'24'}
-plt.xlabel('age', **axis_font)
-plt.ylabel('Count', **axis_font)
-
+plt.figure()
+ax = sns.countplot(train.csv.Age)
+plt.title('Images in each age')
+plt.xlabel('Age')
+plt.ylabel('Number of images')
 plt.show()
+
+# Distribution of well-cropped and poorly-cropped images (This takes about 30 mins to complete)
+# counts = [0, 0, 0]
+# goodCropFiles = []
+# averageCropFiles = []
+# badCropFiles = []
+# for i in range(len(train)):
+#     file = train.csv.iloc[i, 0]
+#     sample = io.imread('data/' + file)
+#     idx = getCropQuality(sample)
+#     counts[idx] += 1
+#
+#     if idx == 0:
+#         goodCropFiles.append(file)
+#     elif idx == 1:
+#         averageCropFiles.append(file)
+#     else:
+#         badCropFiles.append(file)
+# # Write to csv
+# df = pd.DataFrame(goodCropFiles, columns=["Path"])
+# df.to_csv('goodCropFiles.csv', index=False)
+# df = pd.DataFrame(averageCropFiles, columns=["Path"])
+# df.to_csv('averageCropFiles.csv', index=False)
+# df = pd.DataFrame(badCropFiles, columns=["Path"])
+# df.to_csv('badCropFiles.csv', index=False)
+# # Plot figure
+# plt.figure(figsize=(12, 6))
+# sns.barplot(['Good', 'Average', 'Bad'], counts, alpha = 0.9)
+# plt.xticks(rotation = 'vertical')
+# plt.xlabel('Crop Quality')
+# plt.ylabel('Counts')
+# plt.savefig("crop_quality.png")
+
 print('End of program')
