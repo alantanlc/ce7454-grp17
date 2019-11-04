@@ -41,8 +41,8 @@ class FrameCrop:
             rightStd = np.std(sample[:, right])
             right -= 1
 
-        # print(topMean, bottomMean, leftMean, rightMean)
-        # print(topStd, bottomStd, leftStd, rightStd)
-        # print(top, sample.shape[0]-bottom, left, sample.shape[1]-right)
+        print(topMean, bottomMean, leftMean, rightMean)
+        print(topStd, bottomStd, leftStd, rightStd)
+        print(top, sample.shape[0]-bottom, left, sample.shape[1]-right)
 
         return Image.fromarray(sample[top:bottom, left:right])

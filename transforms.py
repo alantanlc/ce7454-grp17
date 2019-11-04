@@ -12,7 +12,7 @@ image_datasets = {x: CheXpertDataset(training=(x == 'train')) for x in ['train',
 
 # Individual transforms
 mean, std = 127.8989, 74.69
-frameCrop = FrameCrop(60, 10)
+frameCrop = FrameCrop(60, 20)
 resize = transforms.Resize(365)
 randomCrop = transforms.RandomCrop(320)
 centerCrop = transforms.CenterCrop(320)
