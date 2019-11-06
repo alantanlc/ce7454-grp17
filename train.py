@@ -225,11 +225,13 @@ def main(args):
     xforms_train = transforms.Compose([FrameCrop(60, 20),
                                        transforms.Resize(365),
                                        transforms.RandomCrop(args.input_size),
-                                       HistogramEqualize()])
+                                       HistogramEqualize(),
+                                       MedianBlur(3)])
     xforms_val = transforms.Compose([FrameCrop(60, 20),
                                      transforms.Resize(365),
                                      transforms.CenterCrop(args.input_size),
-                                     HistogramEqualize()])
+                                     HistogramEqualize(),
+                                     MedianBlur(3)])
     
     
     train_dataset = CheXpertDataset(training = True,transform=xforms_train, view=args.view, num_classes=args.num_classes)
