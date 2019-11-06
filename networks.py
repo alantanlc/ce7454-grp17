@@ -30,6 +30,12 @@ def modified_densenet201(num_classes=14):
     model.classifier = nn.Linear(1920, num_classes)
     return model
     
+def modified_squeezenet(num_classes=14):
+    model = models.SqueezeNet()
+    model.features._modules['0'] = nn.Conv2d(1,96, kernel_size=(7, 7), stride=(2, 2))
+    model.classifier._modules['1'] = nn.Conv2d(512, num_classes, kernel_size=(1, 1), stride=(1, 1))
+    return model
+        
 class layer_sharing_resnet(nn.Module):
 
     def __init__(self, channels=124, num_layers=5, num_classes=14):
@@ -245,4 +251,5 @@ class final_prediction_model(nn.Module):
         y = torch.cat([y1,y2,y3],1)
         y = self.classifier(y)
         return y  
+
     

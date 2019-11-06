@@ -163,6 +163,8 @@ def main(args):
         model = modified_densenet121(num_classes=args.num_classes)
     elif args.model == 'densenet201':
         model = modified_densenet201(num_classes=args.num_classes)
+    elif args.model == 'squeezenet':
+        model = modified_squeezenet(num_classes=args.num_classes)
     elif args.model == 'layer_sharing_resnet':
         model = layer_sharing_resnet(num_classes=args.num_classes)
     elif args.model == 'ensembling_network':
