@@ -5,6 +5,8 @@ import torch.nn.functional as F
 from torchvision.models.resnet import BasicBlock
 from collections import OrderedDict
 from torchvision.models.densenet import _DenseBlock, _Transition
+import torch.nn.init as init
+
 
 def modified_resnet18(num_classes=14):
     model = models.resnet18()
@@ -31,8 +33,8 @@ def modified_densenet201(num_classes=14):
     return model
     
 def modified_squeezenet(num_classes=14):
-    model = models.SqueezeNet()
-    model.features._modules['0'] = nn.Conv2d(1,96, kernel_size=(7, 7), stride=(2, 2))
+    model = models.SqueezeNet(version='1_1')
+    model.features._modules['0'] = nn.Conv2d(1,64, kernel_size=(7, 7), stride=(2, 2))
     model.classifier._modules['1'] = nn.Conv2d(512, num_classes, kernel_size=(1, 1), stride=(1, 1))
     return model
         
@@ -192,9 +194,8 @@ class anytime_prediction_model_densenet121(nn.Module):
                 num_input_features=num_features,
                 bn_size=self.bn_size,
                 growth_rate=self.growth_rate,
-                drop_rate=self.drop_rate,
-                memory_efficient=False
-            )
+                drop_rate=self.drop_rate            
+                )
             tmp.add_module('denseblock%d' % (i + 1), block)
             num_features = num_features + num_layers * self.growth_rate
             if i != len(self.block_config) - 1:
@@ -251,5 +252,81 @@ class final_prediction_model(nn.Module):
         y = torch.cat([y1,y2,y3],1)
         y = self.classifier(y)
         return y  
+
+
+class Fire(nn.Module):
+
+    def __init__(self, inplanes, squeeze_planes,
+                 expand1x1_planes, expand3x3_planes):
+        super(Fire, self).__init__()
+        self.inplanes = inplanes
+        self.squeeze = nn.Conv2d(inplanes, squeeze_planes, kernel_size=1)
+        self.squeeze_activation = nn.ReLU(inplace=True)
+        self.expand1x1 = nn.Conv2d(squeeze_planes, expand1x1_planes,
+                                   kernel_size=1)
+        self.expand1x1_activation = nn.ReLU(inplace=True)
+        self.expand3x3 = nn.Conv2d(squeeze_planes, expand3x3_planes,
+                                   kernel_size=3, padding=1)
+        self.expand3x3_activation = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        x = self.squeeze_activation(self.squeeze(x))
+        return torch.cat([
+            self.expand1x1_activation(self.expand1x1(x)),
+            self.expand3x3_activation(self.expand3x3(x))
+        ], 1)
+
+class SqueezyNet(nn.Module):
+
+    def __init__(self,num_classes=14):
+        super(SqueezyNet, self).__init__()
+        self.num_classes = num_classes
+        self.features = nn.Sequential(
+            nn.Conv2d(1, 64, kernel_size=3, stride=2),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(64, 16, 64, 64),
+            Fire(128, 16, 64, 64),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(128, 32, 128, 128),
+            Fire(256, 32, 128, 128),
+            nn.MaxPool2d(kernel_size=3, stride=2, ceil_mode=True),
+            Fire(256, 48, 192, 192),
+            Fire(384, 48, 192, 192),
+            Fire(384, 64, 256, 256),
+            Fire(512, 64, 256, 256),
+            )
+
+
+        # Final convolution is initialized differently from the rest
+        final_conv = nn.Conv2d(512, self.num_classes, kernel_size=1)
+        self.classifier = nn.Sequential(
+            nn.Dropout(p=0.5),
+            final_conv,
+            nn.ReLU(inplace=True),
+            nn.AdaptiveAvgPool2d((2, 2))
+        )
+        
+        self.linear_classifier = nn.Sequential(
+            nn.Linear(2 * 2 * num_classes, num_classes)
+        )
+
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                if m is final_conv:
+                    init.normal_(m.weight, mean=0.0, std=0.01)
+                else:
+                    init.kaiming_uniform_(m.weight)
+                if m.bias is not None:
+                    init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        x = self.features(x)
+        x = self.classifier(x)
+        x = torch.flatten(x, 1)
+        x = self.linear_classifier(x)
+        return x
+
 
     
