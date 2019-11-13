@@ -3,6 +3,7 @@ import warnings
 warnings.simplefilter("ignore")
 import torch.optim
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn.functional import sigmoid
 import torch.backends.cudnn as cudnn
 import torchvision.transforms as transforms
@@ -18,10 +19,17 @@ import numpy as np
 from sklearn.metrics import roc_curve, auc
 from networks import *
 from dataset import *
+from HistogramEqualize import *
+from MedianBlur import *
+from FrameCrop import *
 from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
 
+
+
 import studentNet as student
+import pdb;
+
 
 
 ##REPRODUCIBILITY
@@ -35,21 +43,28 @@ parser = argparse.ArgumentParser(description='ce7454')
 parser.add_argument('--model', type=str, default="resnet18", help='model name')
 parser.add_argument('--bs', type=int, default=16, help='input batch size - default:128')
 parser.add_argument('--epoch', type=int, default=5, help='number of epochs - default:10')
-parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.005')
+parser.add_argument('--lr', type=float, default=0.0001, help='initial learning rate - default:0.0001')
 parser.add_argument('--input_size', type=int, default=320, help='input size of the depth image - default:96')
 parser.add_argument('--augment_probability', type=float, default=1.0, help='augment probability - default:1.0')
 parser.add_argument('--momentum', type=float, default=0.9, help='momentum - default:0.9')
 parser.add_argument('--weight_decay', type=float, default=0.0005, help='weight_decay - default:0.0005')
 parser.add_argument('--checkpoint', type=str, default=None, help='path/to/checkpoint.pth.tar - default:None')
 parser.add_argument('--teacher_checkpoint', type=str, default=None, help='path/to/checkpoint.pth.tar - default:None')
-
 parser.add_argument('--print_interval', type=int, default=500, help='print interval - default:500')
 parser.add_argument('--save_dir', type=str, default="experiments/", help='path/to/save_dir - default:experiments/')
 parser.add_argument('--name', type=str, default=None, help='name of the experiment. It decides where to store samples and models. if none, it will be saved as the date and time')
 parser.add_argument('--finetune', action='store_true', help='use a pretrained checkpoint - default:false')
 
 parser.add_argument('--view', type=str, default='both', help='dataset view - frontal, lateral, both(default)')
-parser.add_argument('--num_classes', type=int, default=14, help='number of epochs - default:10')
+parser.add_argument('--num_classes', type=int, default=5, help='number of classes - default:5')
+parser.add_argument('--intermediate_size', type=int, default=5, help='anytime_prediction intermediate size')
+parser.add_argument('--use_weighted_bce', action='store_true', help='weighted bceloss')
+parser.add_argument('--unmentioned_w', type=float, default=0.3, help='unmentioned_w')
+parser.add_argument('--uncertainty_w', type=float, default=0.5, help='uncertainty_w')
+
+
+
+
 
 class_names = ['No Finding',
        'Enlarged Cardiomediastinum', 'Cardiomegaly', 'Lung Opacity',
@@ -151,7 +166,7 @@ def compute_auc(all_logits, all_labels, num_classes=14):
 
 def main(args):
     set_default_args(args)
-    
+
     # ADD YOUR MODEL NAME HERE
     if args.model == 'resnet18':
         teacher_model = modified_resnet18(num_classes=args.num_classes)
@@ -161,32 +176,77 @@ def main(args):
         teacher_model = modified_densenet121(num_classes=args.num_classes)
     elif args.model == 'densenet201':
         teacher_model = modified_densenet201(num_classes=args.num_classes)
+    elif args.model == 'squeezenet':
+        teacher_model = SqueezyNet(num_classes=args.num_classes)
     elif args.model == 'layer_sharing_resnet':
         teacher_model = layer_sharing_resnet(num_classes=args.num_classes)
     elif args.model == 'ensembling_network':
         teacher_model = ensembling_network(num_classes=args.num_classes)
     elif args.model == 'SN':
-        teacher_model = student.SN()
+        teacher_model = student.SN(num_classes=args.num_classes)
+    elif args.model == 'masked_duo_model':
+        frontal_path = 'experiments/resnet18_frontal_5_equalized/model_best.pth.tar'
+        lateral_path = 'experiments/resnet18_lateral_5_equalized/model_best.pth.tar'
+        frontal_model = modified_resnet18(num_classes=args.num_classes)
+        frontal_model, _, _ = load_checkpoint(frontal_path , frontal_model,'foo')
+        lateral_model = modified_resnet18(num_classes=args.num_classes)
+        lateral_model, _, _ = load_checkpoint(lateral_path, lateral_model, 'foo')
+        teacher_model = masked_duo_model(frontal_model, lateral_model)
+    elif args.model == 'masked_duo_model_freeze':
+        frontal_path = 'experiments/resnet18_frontal_5_equalized/model_best.pth.tar'
+        lateral_path = 'experiments/resnet18_lateral_5_equalized/model_best.pth.tar'
+        frontal_model = modified_resnet18(num_classes=args.num_classes)
+        frontal_model, _, _ = load_checkpoint(frontal_path , frontal_model,'foo')
+        for param in frontal_model.parameters():
+            param.requires_grad = False
+        lateral_model = modified_resnet18(num_classes=args.num_classes)
+        lateral_model, _, _ = load_checkpoint(lateral_path, lateral_model, 'foo')
+        for param in lateral_model.parameters():
+            param.requires_grad = False
+        teacher_model = masked_duo_model(frontal_model, lateral_model)
+    elif args.model == 'anytime_prediction_model_resnet18':
+        teacher_model = anytime_prediction_model_resnet18(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
+    elif args.model == 'anytime_prediction_model_densenet121':
+        teacher_model = anytime_prediction_model_densenet121(num_classes=args.num_classes, intermediate_size=args.intermediate_size)
+    elif args.model == 'final_prediction_model':
+        teacher_model = final_prediction_model()
     else:
         print(f'~~~ {args.model} not found! ~~~')
 
 
-    teacher_model.float()
-    #if args.is_cuda: teacher_model.cuda()
-    teacher_model = nn.DataParallel(teacher_model)
+    tb_run = f'model={args.model}_epoch={args.epoch}_save_dir={args.name}_lr={args.lr}_num_classes={args.num_classes}'
+    tb = SummaryWriter('./runs/'+'kd '+ tb_run)
+
+
+    #teacher_model.float()
+    #teacher_model = nn.DataParallel(teacher_model)
+    
+    
     optimizer = torch.optim.Adam(teacher_model.parameters(), args.lr)
 
     cudnn.benchmark = True
     criterion = nn.BCEWithLogitsLoss()
     # mean=127.898, std=74.69748171138374
-    xforms_train = transforms.Compose([transforms.Resize(365),
-                               transforms.RandomCrop(args.input_size)])
-    xforms_val = transforms.Compose([transforms.Resize(365), transforms.CenterCrop(args.input_size)])
-    
+    xforms_train = transforms.Compose([FrameCrop(60, 20),
+                                       transforms.Resize(365),
+                                       transforms.RandomCrop(args.input_size),
+                                       HistogramEqualize(),
+                                       MedianBlur(3)])
+    xforms_val = transforms.Compose([FrameCrop(60, 20),
+                                     transforms.Resize(365),
+                                     transforms.CenterCrop(args.input_size),
+                                     HistogramEqualize(),
+                                     MedianBlur(3)])
     
     train_dataset = CheXpertDataset(training = True,transform=xforms_train, view=args.view, num_classes=args.num_classes)
     valid_dataset = CheXpertDataset(training = False,transform=xforms_val, view=args.view,num_classes=args.num_classes)
-
+    if args.model == 'masked_duo_model' or args.model == 'masked_duo_model_freeze':
+        train_dataset = CheXpertDataset_paired(training = True,transform=xforms_train, num_classes=args.num_classes)
+        valid_dataset = CheXpertDataset_paired(training = False,transform=xforms_val, num_classes=args.num_classes)
+    if args.use_weighted_bce:
+        train_dataset = CheXpertDataset_weights(training = True,transform=xforms_train, num_classes=args.num_classes,unmentioned_w=args.unmentioned_w, uncertainty_w=args.uncertainty_w)
+        valid_dataset = CheXpertDataset_weights(training = False,transform=xforms_val, num_classes=args.num_classes,unmentioned_w=args.unmentioned_w, uncertainty_w=args.uncertainty_w)
+    
     train_loader = torch.utils.data.DataLoader(
        train_dataset, batch_size=args.bs, shuffle = True,
        num_workers=128, pin_memory=False)
@@ -194,6 +254,7 @@ def main(args):
     val_loader = torch.utils.data.DataLoader(
        valid_dataset, batch_size=args.bs  ,shuffle = True,
        num_workers=128, pin_memory=False)
+
     current_epoch = 0
 
     """ 
@@ -205,9 +266,16 @@ def main(args):
     teacher_model = nn.DataParallel(teacher_model)
     """
 
-    teacher_model, _, _ = load_checkpoint(args.teacher_checkpoint, teacher_model, optimizer)
-    teacher_model.float()
+    if args.model == 'final_prediction_model':
+        teacher_model, _, _ = load_checkpoint(args.teacher_checkpoint,teacher_model, 'foo')
+        teacher_model = nn.DataParallel(teacher_model)
+    else:
+        teacher_model = nn.DataParallel(teacher_model)
+        teacher_model, _, _ = load_checkpoint(args.teacher_checkpoint, teacher_model, optimizer)
+
+    #teacher_model.float()
     teacher_model.cuda()
+    #teacher_model = nn.DataParallel(teacher_model)
 
 
     """
@@ -217,8 +285,8 @@ def main(args):
     torch.cuda.empty_cache()
     """
 
-
-    model = student.SN()
+    model = SqueezyNet(num_classes=args.num_classes)
+    #model = student.SN(num_classes=args.num_classes)
     model.apply(weights_init)
     model = model.cuda()
     model = nn.DataParallel(model)      
@@ -236,14 +304,14 @@ def main(args):
 
         # train for one epoch
         #epoch_train_loss, TT, train_avg_acc, train_individual_acc = train(train_loader, model, criterion, optimizer, epoch, args, teacher_outputs)
-        epoch_train_loss, TT, train_avg_acc, train_individual_acc = train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_model)
+        epoch_train_loss, TT, train_avg_acc, train_individual_acc = train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_model, tb)
 
         training_loss = training_loss + [epoch_train_loss]
         train_avg_acc_list += [train_avg_acc]
         train_individual_acc_list += [train_individual_acc]
         
         # evaluate on validation set
-        loss_val, test_avg_acc, test_individual_acc = validate(val_loader, model, criterion , args, epoch)
+        loss_val, test_avg_acc, test_individual_acc = validate(val_loader, model, criterion , args, epoch,tb)
         val_loss = val_loss + [loss_val]
         test_avg_acc_list += [test_avg_acc]
         test_individual_acc_list += [test_individual_acc]
@@ -268,6 +336,7 @@ def main(args):
     
     print('\nBEST AUC FOR 5 EVAL CLASSES [AUC, EPOCH]')
     print ('\t'.join([f'{key}:{best_auc_val[key]}'for key in best_auc_val]))
+    tb.close()
     
     #save_plt([train_avg_acc_list, test_avg_acc_list], ["train_avg_acc", "test_avg_acc"], args)
     #save_plt([training_loss, val_loss], ["train_loss", "val_loss"], args)
@@ -353,7 +422,7 @@ def train(train_loader, model, criterion, optimizer, epoch, args, teacher_output
 
 
 
-def validate(val_loader, model, criterion, args, epoch):
+def validate(val_loader, model, criterion, args, epoch,tb):
     
     all_logits = None
     all_labels = None
@@ -419,6 +488,14 @@ def validate(val_loader, model, criterion, args, epoch):
         if auc[key] > best_auc_val[key][0]:
             best_auc_val[key] = [auc[key], epoch]
     
+
+    tb.add_scalar('Validation Loss', float("{:.4f}".format(running_loss)), epoch)
+    tb.add_scalar('Validation Average Acc', float("{:.3f}".format(avg_acc)), epoch)
+    tb.add_scalar('Validation Average Acc for 5 labels Acc', float("{:.3f}".format(avg_acc_5)), epoch)
+    
+    for k,v in auc.items():
+            tb.add_scalar(('Validation ' + str(k)), v, epoch)
+
     return running_loss, avg_acc, individual_acc
 
 
@@ -440,6 +517,7 @@ def load_checkpoint(path, model, optimizer):
     epoch  = checkpoint['epoch']
 
     return model, optimizer, epoch
+    
 
 def load_teacher_model(path, model):
     checkpoint = torch.load(path)
@@ -480,21 +558,18 @@ def fetch_teacher_outputs(teacher_model, dataloader):
     return teacher_outputs
 
 
-def loss_fn_kd(outputs, labels, teacher_outputs):
-    """
-    Compute the knowledge-distillation (KD) loss given outputs, labels.
-    "Hyperparameters": temperature and alpha
+def loss_fn_kd(outputs, labels, teacher_outputs, args):
 
-    NOTE: the KL Divergence for PyTorch comparing the softmaxs of teacher
-    and student expects the input tensor to be log probabilities! See Issue #2
-    """
-    alpha = 0.8
-    KD_loss = alpha * nn.MSELoss()(outputs, teacher_outputs) + \
+    alpha = 0.75
+    #pdb.set_trace()
+    #print(outputs.size())
+    #pdb.set_trace()
+    KD_loss = alpha * nn.MSELoss()( (outputs - (torch.mean(outputs,1).reshape(outputs.size()[0],-1))) , (teacher_outputs - (torch.mean(teacher_outputs,1).reshape(outputs.size()[0],1))) ) + \
               (1-alpha) * nn.BCEWithLogitsLoss()(outputs, labels)
 
     return KD_loss
 
-def train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_model):
+def train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_model,tb):
 
     all_logits = None
     all_labels = None
@@ -517,8 +592,10 @@ def train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_mo
         # compute output
         
         output = model(input)
+
+
         teacher_outputs = teacher_model(input)
-        loss = loss_fn_kd(output, target, teacher_outputs)
+        loss = loss_fn_kd(output, target, teacher_outputs,args)
         running_loss += loss.item()
         # compute gradient and do SGD step
         optimizer.zero_grad()
@@ -566,6 +643,13 @@ def train_tgt(train_loader, model, criterion, optimizer, epoch, args, teacher_mo
           'Average Acc: {avg_acc:.3f}\t'
           'Average Acc for 5 labels: {avg_acc_5:.3f}'
           '\nAUC: {auc}\t'.format(loss=running_loss, avg_acc=avg_acc, avg_acc_5=avg_acc_5, auc= '\n'.join([f'{key}:{auc[key]}'for key in auc])))
+
+    tb.add_scalar('Training Loss', float("{:.4f}".format(running_loss)), epoch)
+    tb.add_scalar('Training Average Acc', float("{:.3f}".format(avg_acc)), epoch)
+    tb.add_scalar('Training Average Acc for 5 labels Acc', float("{:.3f}".format(avg_acc_5)), epoch)
+    
+    for k,v in auc.items():
+            tb.add_scalar(('Training ' + str(k)), v, epoch)
 
     return running_loss, TT, avg_acc, individual_acc
 
